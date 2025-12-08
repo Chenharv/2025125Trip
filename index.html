@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>台東 1.5 日舒壓之旅</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; }
+        .timeline-line { position: absolute; left: 24px; top: 0; bottom: 0; width: 2px; background-color: #cbd5e1; z-index: 0; }
+        .tab-active { border-bottom: 2px solid #0d9488; color: #0d9488; font-weight: bold; }
+        .card-shadow { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
+    </style>
+</head>
+<body class="pb-20">
+
+    <header class="bg-teal-600 text-white p-4 sticky top-0 z-50 shadow-md">
+        <h1 class="text-xl font-bold text-center"><i class="fas fa-map-marked-alt mr-2"></i>台東 1.5 日舒壓之旅</h1>
+        <p class="text-xs text-center text-teal-100 mt-1">13:15 車站出發 → 隔日 17:15 返回</p>
+    </header>
+
+    <div class="flex justify-around bg-white p-3 sticky top-16 z-40 shadow-sm border-b">
+        <button onclick="switchTab('day1')" id="btn-day1" class="tab-active w-1/3 pb-2 text-center">Day 1</button>
+        <button onclick="switchTab('day2')" id="btn-day2" class="w-1/3 pb-2 text-center text-gray-500">Day 2</button>
+        <button onclick="switchTab('extra')" id="btn-extra" class="w-1/3 pb-2 text-center text-gray-500">順遊景點</button>
+    </div>
+
+    <div class="max-w-md mx-auto p-4 relative">
+        
+        <div id="day1" class="tab-content">
+            <div class="relative pl-4">
+                <div class="timeline-line"></div>
+                
+                <div id="day1-list"></div>
+
+            </div>
+        </div>
+
+        <div id="day2" class="tab-content hidden">
+            <div class="relative pl-4">
+                <div class="timeline-line"></div>
+                <div id="day2-list"></div>
+            </div>
+        </div>
+
+        <div id="extra" class="tab-content hidden">
+            <div id="extra-list" class="space-y-4"></div>
+        </div>
+
+    </div>
+
+    <script>
+        // Data Structure
+        const day1Data = [
+            { time: "13:15", title: "台東車站出發", type: "transport", duration: "20分", icon: "fa-train", note: "準時出發，前往森林公園" },
+            { time: "13:35", title: "台東森林公園", type: "activity", duration: "40分", icon: "fa-tree", note: "易停車、湖景散步、自行車道" },
+            { time: "14:15", title: "前往富岡漁港", type: "transport", duration: "10分", icon: "fa-car", note: "車程短，近海邊" },
+            { time: "14:25", title: "富岡漁港", type: "activity", duration: "35分", icon: "fa-ship", note: "看海、吃海味小吃、喝飲料" },
+            { time: "15:00", title: "前往初鹿牧場", type: "transport", duration: "25分", icon: "fa-car", note: "山區路況良好" },
+            { time: "15:25", title: "初鹿牧場", type: "activity", duration: "1小時", icon: "fa-cow", note: "草原拍照、喝鮮奶、親子動物區" },
+            { time: "16:30", title: "前往知本老爺酒店", type: "transport", duration: "45分", icon: "fa-car", note: "準備 Check-in" },
+            { time: "17:15", title: "知本老爺酒店 (宿)", type: "hotel", duration: "自由", icon: "fa-bed", note: "泡湯、晚餐、享受飯店設施" }
+        ];
+
+        const day2Data = [
+            { time: "08:30", title: "飯店早餐", type: "food", duration: "30分", icon: "fa-coffee", note: "享受悠閒早晨" },
+            { time: "09:00", title: "前往知本森林遊樂區", type: "transport", duration: "10分", icon: "fa-car", note: "上坡路段" },
+            { time: "09:10", title: "知本國家森林遊樂區", type: "activity", duration: "1h 50m", icon: "fa-hiking", note: "走吊橋、森林浴、深呼吸" },
+            { time: "11:00", title: "前往知本街區", type: "transport", duration: "10分", icon: "fa-car", note: "" },
+            { time: "11:10", title: "知本街區午餐", type: "food", duration: "1小時", icon: "fa-utensils", note: "在地餐廳選擇多" },
+            { time: "12:10", title: "前往多良車站", type: "transport", duration: "45分", icon: "fa-car", note: "沿海公路景色絕佳" },
+            { time: "13:00", title: "多良車站", type: "activity", duration: "1小時", icon: "fa-camera", note: "全台最美車站、熱門打卡點" },
+            { time: "14:00", title: "回台東市區", type: "transport", duration: "60分", icon: "fa-car", note: "回程較遠，注意精神" },
+            { time: "15:00", title: "台東市區逛街", type: "activity", duration: "1小時", icon: "fa-shopping-bag", note: "正氣路商圈、買伴手禮" },
+            { time: "16:00", title: "前往台東車站", type: "transport", duration: "20分", icon: "fa-suitcase", note: "預留還車/走月台時間" },
+            { time: "17:15", title: "行程結束", type: "end", duration: "", icon: "fa-flag-checkered", note: "平安返家" }
+        ];
+
+        const extraData = [
+            { area: "🔹 台東車站 → 市區附近", spots: [
+                { name: "鐵花村音樂聚落", desc: "文創市集、裝置藝術 (適合晚間)", time: "30-60分" },
+                { name: "正氣路商圈", desc: "知名小吃、伴手禮聚集地", time: "20-40分" }
+            ]},
+            { area: "🔹 市區 → 富岡 → 初鹿", spots: [
+                { name: "小野柳", desc: "奇特海岸地形，就在富岡旁", time: "40-60分" },
+                { name: "卑南遺址公園", desc: "大草皮、文化遺跡、涼亭", time: "20-40分" }
+            ]},
+            { area: "🔹 知本周邊", spots: [
+                { name: "白玉瀑布", desc: "小型山區瀑布 (較冷門)", time: "20-25分" },
+                { name: "知本溫泉街", desc: "煮溫泉蛋、逛小店", time: "20-40分" }
+            ]},
+             { area: "🔹 南迴方向 (往多良)", spots: [
+                { name: "金樽陸連島觀景台", desc: "海岸彎月景色 (回程方向)", time: "20-30分" },
+                { name: "華源海灣", desc: "大草地、海岸線拍照點", time: "20-40分" }
+            ]}
+        ];
+
+        // Render Functions
+        function renderTimeline(data, elementId) {
+            const container = document.getElementById(elementId);
+            let html = '';
+            
+            data.forEach(item => {
+                const isActivity = item.type === 'activity' || item.type === 'food' || item.type === 'hotel';
+                const bgColor = isActivity ? 'bg-white' : 'bg-gray-50';
+                const borderColor = isActivity ? 'border-teal-500' : 'border-gray-300';
+                const googleMapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent("台東 " + item.title.replace('前往', ''))}`;
+
+                html += `
+                <div class="relative z-10 mb-6 pl-6">
+                    <div class="absolute -left-3 top-0 w-8 h-8 rounded-full ${isActivity ? 'bg-teal-500' : 'bg-gray-400'} text-white flex items-center justify-center shadow-md border-2 border-white">
+                        <i class="fas ${item.icon} text-xs"></i>
+                    </div>
+                    
+                    <div class="${bgColor} p-4 rounded-lg card-shadow border-l-4 ${borderColor}">
+                        <div class="flex justify-between items-start">
+                            <h3 class="font-bold text-gray-800 text-lg">${item.title}</h3>
+                            <span class="text-sm font-mono text-teal-700 font-bold">${item.time}</span>
+                        </div>
+                        
+                        <div class="mt-2 text-sm text-gray-600 flex items-center">
+                            ${item.duration ? `<span class="bg-gray-200 px-2 py-0.5 rounded text-xs mr-2"><i class="far fa-clock mr-1"></i>${item.duration}</span>` : ''}
+                        </div>
+                        
+                        <p class="mt-2 text-gray-500 text-sm leading-relaxed">${item.note}</p>
+                        
+                        ${item.type !== 'end' ? `
+                        <a href="${googleMapUrl}" target="_blank" class="mt-3 inline-block w-full text-center py-2 rounded border border-teal-500 text-teal-600 text-sm hover:bg-teal-50 transition">
+                            <i class="fas fa-location-arrow mr-1"></i> 導航
+                        </a>` : ''}
+                    </div>
+                </div>`;
+            });
+            container.innerHTML = html;
+        }
+
+        function renderExtras() {
+            const container = document.getElementById('extra-list');
+            let html = '';
+            
+            extraData.forEach(group => {
+                html += `
+                <div class="bg-white rounded-lg p-4 card-shadow mb-4">
+                    <h3 class="font-bold text-teal-700 border-b pb-2 mb-3">${group.area}</h3>
+                    <div class="space-y-3">
+                        ${group.spots.map(spot => `
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <div class="font-bold text-gray-800">${spot.name}</div>
+                                    <div class="text-xs text-gray-500">${spot.desc}</div>
+                                </div>
+                                <div class="text-xs bg-orange-100 text-orange-600 px-2 py-1 rounded whitespace-nowrap">${spot.time}</div>
+                            </div>
+                            <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent("台東 " + spot.name)}" target="_blank" class="text-xs text-blue-500 block mt-1 hover:underline"><i class="fas fa-map-marker-alt"></i> 查看位置</a>
+                        `).join('<hr class="my-2 border-dashed border-gray-200">')}
+                    </div>
+                </div>`;
+            });
+            container.innerHTML = html;
+        }
+
+        // Tab Switching Logic
+        function switchTab(tabName) {
+            // Hide all contents
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            // Show selected content
+            document.getElementById(tabName).classList.remove('hidden');
+            
+            // Reset buttons
+            document.querySelectorAll('button[id^="btn-"]').forEach(btn => {
+                btn.classList.remove('tab-active', 'text-teal-700');
+                btn.classList.add('text-gray-500');
+            });
+            // Highlight active button
+            const activeBtn = document.getElementById(`btn-${tabName}`);
+            activeBtn.classList.add('tab-active', 'text-teal-700');
+            activeBtn.classList.remove('text-gray-500');
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            renderTimeline(day1Data, 'day1-list');
+            renderTimeline(day2Data, 'day2-list');
+            renderExtras();
+        });
+    </script>
+</body>
+</html>
