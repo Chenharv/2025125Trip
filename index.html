@@ -115,7 +115,7 @@
                 const isActivity = item.type === 'activity' || item.type === 'food' || item.type === 'hotel';
                 const bgColor = isActivity ? 'bg-white' : 'bg-gray-50';
                 const borderColor = isActivity ? 'border-teal-500' : 'border-gray-300';
-                const googleMapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent("台東 " + item.title.replace('前往', ''))}`;
+                const googleMapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(" " + item.title.replace('前往', ''))}`;
 
                 html += `
                 <div class="relative z-10 mb-6 pl-6">
@@ -162,7 +162,7 @@
                                 </div>
                                 <div class="text-xs bg-orange-100 text-orange-600 px-2 py-1 rounded whitespace-nowrap">${spot.time}</div>
                             </div>
-                            <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent("台東 " + spot.name)}" target="_blank" class="text-xs text-blue-500 block mt-1 hover:underline"><i class="fas fa-map-marker-alt"></i> 查看位置</a>
+                            <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(" " + spot.name)}" target="_blank" class="text-xs text-blue-500 block mt-1 hover:underline"><i class="fas fa-map-marker-alt"></i> 查看位置</a>
                         `).join('<hr class="my-2 border-dashed border-gray-200">')}
                     </div>
                 </div>`;
