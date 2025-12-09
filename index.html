@@ -215,19 +215,17 @@
             activeBtn.classList.remove('text-gray-500');
         }
 
-// Weather Functions (CWA 最終版 - 不在網址過濾中文)
+// Weather Functions (終極診斷版)
         async function fetchWeather() {
             const weatherCard = document.getElementById('weather-card');
             const hourlyContainer = document.getElementById('hourly-forecast');
+            const debugMsg = document.getElementById('weather-desc'); // 借用描述欄位顯示狀態
             
-            // ✅ 您的 API Key
-            const CWA_KEY = 'CWA-238CE5CA-08E3-4392-8F7D-23AAD6B5814E'; 
+            // ✅ 使用您驗證過「絕對有效」的網址 (已包含 Key 和編碼後的臺東市)
+            // 這裡直接鎖定抓取 "臺東市" (locationName=%E8%87%BA%E6%9D%B1%E5%B8%82)
+            const url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-039?Authorization=CWA-238CE5CA-08E3-4392-8F7D-23AAD6B5814E&locationName=%E8%87%BA%E6%9D%B1%E5%B8%82&elementName=T,Wx,PoP12h,PoP6h";
 
-            // ⚠️ 修改重點：移除 url 裡的 &locationName=... 
-            // 直接抓取整個台東縣 (F-D0047-039) 所有鄉鎮，避免編碼錯誤
-            const url = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-039?Authorization=${CWA_KEY}&elementName=T,Wx,PoP12h,PoP6h`;
-
-            // 天氣圖示對照
+            // 圖示對照表
             function getCwaIcon(wxString) {
                 if (!wxString) return { icon: 'fa-question', color: 'text-gray-300' };
                 if (wxString.includes('雷')) return { icon: 'fa-bolt', color: 'text-purple-500' };
@@ -241,42 +239,56 @@
 
             try {
                 const response = await fetch(url);
-                if (!response.ok) throw new Error(`API 連線失敗 (${response.status})`);
+                if (!response.ok) throw new Error("網路連線失敗: " + response.status);
                 
                 const data = await response.json();
+
+                // 🛑 診斷點 1: 檢查最外層
+                if (!data.records) {
+                    console.log("完整資料 dump:", data);
+                    throw new Error("找不到 records 欄位 (請看 Console)");
+                }
+
+                // 🛑 診斷點 2: 檢查 locations
+                // 氣象署有時候是 locations (複數)，有時候結構會變，這裡做防呆
+                const locations = data.records.locations || data.records.location;
+                if (!locations) {
+                    throw new Error("找不到 locations 欄位");
+                }
+
+                // 🛑 診斷點 3: 取得 location (城鎮)
+                // 因為我們網址有指定 locationName，所以 locations[0].location 應該就是臺東市的陣列
+                const locationAry = locations[0].location;
+                if (!locationAry || locationAry.length === 0) {
+                     // 如果陣列是空的，代表「臺東市」這個字可能沒對到
+                     throw new Error("抓到了 locations 但裡面沒有任何城鎮資料");
+                }
+
+                // 取得第一筆資料 (因為網址已經過濾了臺東市，所以一定是第 0 筆)
+                const locationData = locationAry[0]; 
                 
-                // 確認資料結構
-                if (!data.records || !data.records.locations || !data.records.locations[0].location) {
-                    throw new Error("API 回傳格式異常");
-                }
+                // 確認這是不是臺東市
+                // console.log("抓到的地點:", locationData.locationName); 
 
-                // ⚠️ 修改重點：在回傳的資料陣列中，自己尋找「臺東市」
-                // data.records.locations[0].location 是一個陣列，包含台東所有鄉鎮
-                const allTowns = data.records.locations[0].location;
-                const locationData = allTowns.find(town => town.locationName === '臺東市');
-
-                if (!locationData) {
-                    throw new Error("在資料中找不到「臺東市」");
-                }
-
-                // 取得資料成功，開始解析
                 const elements = locationData.weatherElement;
                 const weatherMap = {};
                 elements.forEach(el => { weatherMap[el.elementName] = el.time; });
 
-                // --- 1. 處理目前天氣 ---
+                // --- 資料解析成功，開始渲染 ---
+
+                // 1. 目前天氣
                 const currentWx = weatherMap['Wx'][0].elementValue[0].value; 
                 const currentT = weatherMap['T'][0].elementValue[0].value;
                 
-                // 降雨機率邏輯
+                // 降雨機率
                 let currentRain = '0';
-                if(weatherMap['PoP6h'] && weatherMap['PoP6h'][0].elementValue[0].value !== ' ') {
-                     currentRain = weatherMap['PoP6h'][0].elementValue[0].value;
-                } else if (weatherMap['PoP12h'] && weatherMap['PoP12h'][0].elementValue[0].value !== ' ') {
-                     currentRain = weatherMap['PoP12h'][0].elementValue[0].value;
+                // 嘗試抓 PoP6h 或 PoP12h
+                const popArr = weatherMap['PoP6h'] || weatherMap['PoP12h'];
+                if (popArr && popArr[0].elementValue[0].value !== ' ') {
+                    currentRain = popArr[0].elementValue[0].value;
                 }
 
-                // 高低溫邏輯
+                // 高低溫
                 let maxT = -100, minT = 100;
                 const checkLimit = Math.min(8, weatherMap['T'].length);
                 for(let i=0; i<checkLimit; i++) {
@@ -285,33 +297,29 @@
                     if(t < minT) minT = t;
                 }
 
-                // 更新上方大卡片
                 const iconInfo = getCwaIcon(currentWx);
                 document.getElementById('current-temp').innerText = currentT;
                 document.getElementById('rain-chance').innerText = currentRain;
                 document.getElementById('weather-icon').innerHTML = `<i class="fas ${iconInfo.icon} ${iconInfo.color}"></i>`;
                 document.getElementById('weather-desc').innerText = `${currentWx} (高${maxT}° 低${minT}°)`;
 
-                // --- 2. 未來預報 ---
+                // 2. 未來預報
                 let html = '';
                 for(let i = 1; i <= 3; i++) {
                     if (weatherMap['T'][i]) {
                         const timeStr = weatherMap['T'][i].startTime; 
                         const timeDisplay = timeStr.split(' ')[1].substring(0, 5);
-                        
                         const valT = weatherMap['T'][i].elementValue[0].value;
                         const valWx = weatherMap['Wx'][i].elementValue[0].value;
-                        
-                        let valPop = '0';
-                        if (weatherMap['PoP6h']) {
-                            const matchPop = weatherMap['PoP6h'].find(p => p.startTime === timeStr || p.endTime === weatherMap['T'][i].endTime);
-                            if(matchPop && matchPop.elementValue[0].value !== ' ') valPop = matchPop.elementValue[0].value;
-                        } else if (weatherMap['PoP12h']) {
-                             const matchPop = weatherMap['PoP12h'].find(p => p.startTime === timeStr || p.endTime === weatherMap['T'][i].endTime);
-                             if(matchPop && matchPop.elementValue[0].value !== ' ') valPop = matchPop.elementValue[0].value;
-                        }
-
                         const subIcon = getCwaIcon(valWx);
+                        
+                        // 嘗試找對應時間的降雨率
+                        let valPop = '0';
+                        const popList = weatherMap['PoP6h'] || weatherMap['PoP12h'];
+                        if(popList) {
+                            const match = popList.find(p => p.startTime === timeStr || p.endTime === weatherMap['T'][i].endTime);
+                            if(match && match.elementValue[0].value !== ' ') valPop = match.elementValue[0].value;
+                        }
 
                         html += `
                         <div class="flex flex-col items-center justify-center bg-blue-50 rounded p-2 col-span-1">
@@ -329,8 +337,18 @@
 
             } catch (error) {
                 console.error("Weather Error:", error);
+                
+                // 🛑 這裡會把詳細錯誤印在卡片上，讓我們知道是哪一行出錯
                 document.getElementById('weather-desc').innerText = "讀取失敗";
-                hourlyContainer.innerHTML = `<div class="col-span-3 text-red-500 text-xs py-2">${error.message}</div>`;
+                document.getElementById('current-temp').innerText = "Err";
+                
+                // 將 data 的結構印出來 (如果有抓到的話)
+                hourlyContainer.innerHTML = `
+                    <div class="col-span-3 text-red-600 text-xs text-left p-2 bg-red-50 rounded overflow-scroll h-24">
+                        <strong>錯誤原因:</strong> ${error.message}<br>
+                        請按 F12 打開 Console 截圖給我看
+                    </div>`;
+                
                 weatherCard.classList.remove('hidden');
             }
         }
