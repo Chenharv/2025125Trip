@@ -215,7 +215,7 @@
             activeBtn.classList.remove('text-gray-500');
         }
 
-// Weather Functions (F-C0032-001 穩定版 - 今明36小時)
+// Weather Functions (終極混合版：O-A0001-001 即時 + F-C0032-001 預報)
         async function fetchWeather() {
             const weatherCard = document.getElementById('weather-card');
             const hourlyContainer = document.getElementById('hourly-forecast');
@@ -223,103 +223,113 @@
             // ✅ 您的 API Key
             const CWA_KEY = 'CWA-238CE5CA-08E3-4392-8F7D-23AAD6B5814E'; 
             
-            // 使用 F-C0032-001 (一般天氣預報-今明36小時)
-            // 抓取「臺東縣」
-            const url = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-C0032-001?Authorization=${CWA_KEY}&locationName=臺東縣`;
+            // 1. 定義兩個 API URL
+            // (A) 即時觀測 (O-A0001-001) - 抓全台資料回來濾 (因為無法直接用 API 參數濾鄉鎮)
+            const realtimeUrl = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization=${CWA_KEY}&elementName=AirTemperature,Weather`;
+            
+            // (B) 未來預報 (F-C0032-001) - 抓臺東縣
+            const forecastUrl = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-C0032-001?Authorization=${CWA_KEY}&locationName=臺東縣`;
 
             // 天氣圖示對照
             function getIcon(wxStr) {
                 if (!wxStr) return { icon: 'fa-cloud', color: 'text-gray-400' };
+                // 即時資料有時回傳 "陰" 或 "多雲"，預報回傳 "多雲時陰"
                 if (wxStr.includes('雷')) return { icon: 'fa-bolt', color: 'text-purple-500' };
                 if (wxStr.includes('雨')) return { icon: 'fa-umbrella', color: 'text-blue-500' };
                 if (wxStr.includes('晴') && wxStr.includes('雲')) return { icon: 'fa-cloud-sun', color: 'text-orange-400' };
                 if (wxStr.includes('晴')) return { icon: 'fa-sun', color: 'text-yellow-400' };
                 if (wxStr.includes('陰')) return { icon: 'fa-cloud', color: 'text-gray-500' };
+                if (wxStr.includes('雲')) return { icon: 'fa-cloud', color: 'text-gray-400' };
                 return { icon: 'fa-cloud', color: 'text-gray-400' };
             }
 
             // 萬用取值 helper
             function getProp(obj, key) {
                 if (!obj) return undefined;
-                return obj[key] || 
-                       obj[key.charAt(0).toUpperCase() + key.slice(1)] || 
-                       obj[key.toLowerCase()];
+                return obj[key] || obj[key.charAt(0).toUpperCase() + key.slice(1)] || obj[key.toLowerCase()];
             }
 
             try {
-                const response = await fetch(url);
-                const data = await response.json();
+                // 平行請求兩個 API (加快速度)
+                const [resRealtime, resForecast] = await Promise.all([
+                    fetch(realtimeUrl),
+                    fetch(forecastUrl)
+                ]);
 
-                // F-C0032-001 結構: records -> location -> [0] -> weatherElement
-                const locationAry = getProp(data.records, 'location');
-                if (!locationAry || locationAry.length === 0) throw new Error("找不到 location 資料");
+                const dataRealtime = await resRealtime.json();
+                const dataForecast = await resForecast.json();
 
-                // 因為我們網址指定了 locationName=臺東縣，所以第 0 筆就是臺東縣
-                const targetLoc = locationAry[0];
-                const locName = getProp(targetLoc, 'locationName'); // 確認一下是不是臺東縣
+                // --- 處理 (A) 即時資料 (O-A0001-001) ---
+                // 1. 找到「臺東市」的測站
+                const stations = getProp(dataRealtime.records, 'Station');
+                let targetStation = stations.find(s => s.GeoInfo.TownName === '臺東市');
                 
-                // 整理 5 大要素: Wx, PoP, MinT, MaxT, CI
+                // 如果找不到臺東市(極少見)，就找臺東縣任一個
+                if (!targetStation) targetStation = stations.find(s => s.GeoInfo.CountyName === '臺東縣');
+                if (!targetStation) throw new Error("找不到即時測站資料");
+
+                // 2. 讀取即時溫度 & 天氣
+                const curTemp = targetStation.WeatherElement.AirTemperature;
+                // 有些自動站沒有 Weather (天氣現象) 欄位，如果沒有就用預報的代替
+                let curWx = targetStation.WeatherElement.Weather; 
+                if (curWx === '-99' || !curWx) curWx = null; // -99 代表儀器故障或無資料
+
+                // --- 處理 (B) 預報資料 (F-C0032-001) ---
+                const locationAry = getProp(dataForecast.records, 'location');
+                const targetLoc = locationAry[0]; // 臺東縣
                 const elements = getProp(targetLoc, 'weatherElement');
                 const weatherMap = {};
-                
                 elements.forEach(el => {
-                    const name = getProp(el, 'elementName'); // Wx, PoP, ...
-                    // F-C0032-001 的 time 是一個陣列，通常有 3 筆 (12h, 24h, 36h)
-                    weatherMap[name] = getProp(el, 'time');
+                    weatherMap[getProp(el, 'elementName')] = getProp(el, 'time');
                 });
-
-                // 輔助取值：取得第 k 個時段的某個數值
-                // F-C0032-001 的值放在 parameter -> parameterName (有些是 parameterValue)
-                const getValue = (elName, index) => {
-                    if (!weatherMap[elName] || !weatherMap[elName][index]) return '--';
-                    const param = getProp(weatherMap[elName][index], 'parameter');
-                    // Wx, CI 是 parameterName; PoP, MinT, MaxT 也是 parameterName (氣象署這隻API統一用 parameterName 存值，除了 unit)
-                    return getProp(param, 'parameterName'); 
-                };
-
-                // --- A. 目前時段 (第 0 筆) 作為大卡片顯示 ---
-                // 注意：F-C0032-001 只有「未來3個時段」，沒有「現在瞬間值」。
-                // 我們拿「第一個時段」(通常是今晚或現在) 來代表目前概況。
                 
-                const wWx = getValue('Wx', 0);
-                const wPoP = getValue('PoP', 0);
-                const wMinT = getValue('MinT', 0);
-                const wMaxT = getValue('MaxT', 0);
-                const wCI = getValue('CI', 0);
+                const getForecastVal = (name, index) => getProp(getProp(weatherMap[name][index], 'parameter'), 'parameterName');
 
-                // 更新大卡片
-                const iconInfo = getIcon(wWx);
-                // 這隻 API 給的是區間 (如 22-25)，我們顯示平均或範圍
-                document.getElementById('current-temp').innerText = `${wMinT}-${wMaxT}`;
-                document.getElementById('rain-chance').innerText = wPoP;
+                // 取得預報的第一個時段 (作為雨率和高低溫的參考)
+                const fWx = getForecastVal('Wx', 0);
+                const fPoP = getForecastVal('PoP', 0);
+                const fMinT = getForecastVal('MinT', 0);
+                const fMaxT = getForecastVal('MaxT', 0);
+                const fCI = getForecastVal('CI', 0);
+
+                // --- 整合顯示 (UI) ---
+                
+                // 決定大卡片顯示什麼
+                // 溫度：絕對使用即時的 (AirTemperature)
+                const displayTemp = curTemp; 
+                
+                // 天氣現象：如果有即時的就用即時，沒有就用預報
+                const displayWx = curWx ? curWx : fWx; 
+                
+                // 降雨機率：即時站只有累積雨量(mm)沒有機率(%)，所以這裡我們用「預報值」
+                const displayPoP = fPoP;
+
+                const iconInfo = getIcon(displayWx);
+                
+                document.getElementById('current-temp').innerText = Math.round(displayTemp); // 四雪五入取整數
+                document.getElementById('rain-chance').innerText = displayPoP;
                 document.getElementById('weather-icon').innerHTML = `<i class="fas ${iconInfo.icon} ${iconInfo.color}"></i>`;
-                document.getElementById('weather-desc').innerText = `${wWx} (${wCI})`;
+                // 描述：天氣現象 (體感舒適度)
+                document.getElementById('weather-desc').innerText = `${displayWx} (${fCI})`;
 
-                // --- B. 未來 3 個時段列表 ---
+                // --- 產生下方 3 格預報 (來自 F-C0032-001) ---
                 let html = '';
-                
-                // 這份資料固定提供 3 個時段 (index 0, 1, 2)
                 for (let i = 0; i < 3; i++) {
                     const timeObj = weatherMap['Wx'][i];
-                    const startTime = getProp(timeObj, 'startTime'); // "2023-12-09 18:00:00"
+                    const startTime = getProp(timeObj, 'startTime');
+                    const datePart = startTime.substring(5, 10).replace('-', '/');
+                    const hourPart = startTime.substring(11, 16);
                     
-                    // 時間格式化 (取日期+時間)
-                    // startTime 格式: YYYY-MM-DD HH:MM:SS
-                    const datePart = startTime.substring(5, 10).replace('-', '/'); // 12/09
-                    const hourPart = startTime.substring(11, 16); // 18:00
-                    
-                    // 判斷時段名稱 (氣象署通常是 06:00, 12:00, 18:00 切)
                     let timeLabel = `${datePart} ${hourPart}`;
-                    // 為了美觀，如果是 06:00 顯示「白天」，18:00 顯示「晚上」
                     if (hourPart === '06:00') timeLabel = `${datePart} 白天`;
                     else if (hourPart === '18:00') timeLabel = `${datePart} 晚上`;
                     else if (hourPart === '12:00') timeLabel = `${datePart} 下午`;
                     else if (hourPart === '00:00') timeLabel = `${datePart} 深夜`;
 
-                    const valWx = getValue('Wx', i);
-                    const valPoP = getValue('PoP', i);
-                    const valMinT = getValue('MinT', i);
-                    const valMaxT = getValue('MaxT', i);
+                    const valWx = getForecastVal('Wx', i);
+                    const valPoP = getForecastVal('PoP', i);
+                    const valMinT = getForecastVal('MinT', i);
+                    const valMaxT = getForecastVal('MaxT', i);
                     const subIcon = getIcon(valWx);
 
                     html += `
@@ -334,7 +344,6 @@
                     </div>`;
                 }
 
-                // 使用 3 欄網格顯示
                 hourlyContainer.className = "grid grid-cols-3 gap-2 text-center pt-2"; 
                 hourlyContainer.innerHTML = html;
                 weatherCard.classList.remove('hidden');
