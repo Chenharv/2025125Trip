@@ -215,12 +215,12 @@
             activeBtn.classList.remove('text-gray-500');
         }
 
-// Weather Functions (CWA 終極除錯版)
+// Weather Functions (CWA 最終完結版 - 修正大小寫問題)
         async function fetchWeather() {
             const weatherCard = document.getElementById('weather-card');
             const hourlyContainer = document.getElementById('hourly-forecast');
             
-            // 您的 API Key
+            // ✅ 您的 API Key
             const CWA_KEY = 'CWA-238CE5CA-08E3-4392-8F7D-23AAD6B5814E'; 
             
             // 抓取台東縣完整資料
@@ -241,41 +241,31 @@
                 const response = await fetch(url);
                 const data = await response.json();
 
-                // 🛑 除錯點 1: 檢查是否回傳 success: false
-                if (data.success === "false" || data.success === false) {
-                     // 如果 API 說失敗，印出原因
-                     throw new Error("API 回傳失敗: " + JSON.stringify(data.error));
-                }
-
-                // 🛑 除錯點 2: 檢查 records 是否存在
-                if (!data.records) {
-                     throw new Error("沒有 records 欄位. 回傳內容: " + JSON.stringify(data).substring(0, 100));
-                }
-
-                // 🛑 除錯點 3: 檢查 locations (這就是剛剛報錯的地方)
-                // 我們把 records 裡面的所有「鑰匙 (Key)」印出來看看到底有什麼
-                const recordsKeys = Object.keys(data.records).join(", ");
-                
-                const locationsWrapper = data.records.locations || data.records.location;
+                // 🛑 修正重點：同時檢查大寫 Locations 和小寫 locations
+                const locationsWrapper = data.records.Locations || data.records.locations || data.records.location;
                 
                 if (!locationsWrapper) {
-                    throw new Error(`找不到 locations. records 裡面只有: [${recordsKeys}]`);
+                    throw new Error(`找不到 locations/Locations 欄位，現有欄位: ${Object.keys(data.records).join(', ')}`);
                 }
 
+                // 取得 location 陣列 (鄉鎮列表)
                 const allTowns = locationsWrapper[0].location;
                 
-                // 🔍 搜尋臺東市
+                if (!allTowns) {
+                    throw new Error("找到 Locations 但裡面沒有 location 列表");
+                }
+
+                // 🔍 搜尋臺東市 (同時找繁體與簡寫)
                 const targetTown = allTowns.find(town => 
                     town.locationName === '臺東市' || 
-                    town.locationName === '台東市' ||
-                    town.locationName.includes('臺東') // 寬鬆搜尋
+                    town.locationName === '台東市'
                 );
 
                 if (!targetTown) {
-                    throw new Error("找不到臺東市，只看到: " + allTowns.slice(0,3).map(t=>t.locationName).join(','));
+                    throw new Error("找不到臺東市，前幾個是: " + allTowns.slice(0,3).map(t=>t.locationName).join(','));
                 }
 
-                // --- 成功取得資料 ---
+                // --- 成功！開始解析資料 ---
                 const elements = targetTown.weatherElement;
                 const weatherMap = {};
                 elements.forEach(el => { weatherMap[el.elementName] = el.time; });
@@ -335,12 +325,11 @@
 
             } catch (error) {
                 console.error("Weather Error:", error);
-                document.getElementById('weather-desc').innerText = "API 除錯中";
+                document.getElementById('weather-desc').innerText = "讀取失敗";
                 
-                // 🔴 這裡會把最關鍵的錯誤資訊印出來
                 hourlyContainer.innerHTML = `
-                    <div class="col-span-3 text-red-600 text-xs text-left p-2 bg-red-50 rounded" style="word-break: break-all;">
-                        <strong>錯誤原因:</strong> ${error.message}
+                    <div class="col-span-3 text-red-600 text-xs text-left p-2 bg-red-50 rounded">
+                        <strong>錯誤:</strong> ${error.message}
                     </div>`;
                 weatherCard.classList.remove('hidden');
             }
