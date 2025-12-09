@@ -53,7 +53,7 @@
         <button onclick="switchTab('extra')" id="btn-extra" class="w-1/3 pb-2 text-center text-gray-500">順遊景點</button>
     </div>
 
-    <div class="max-w-md mx-auto p-4 relative">
+    <div id="swipe-area" class="max-w-md mx-auto p-4 relative min-h-screen">
         
         <div id="day1" class="tab-content">
             <div class="relative pl-4">
@@ -353,6 +353,56 @@
                 document.getElementById('weather-desc').innerText = "讀取失敗";
                 hourlyContainer.innerHTML = `<div class="col-span-3 text-red-500 text-xs p-2">${error.message}</div>`;
                 weatherCard.classList.remove('hidden');
+            }
+        }
+
+// --- 🆕 手勢滑動邏輯 (Swipe Logic) ---
+        
+        // 1. 定義分頁順序
+        const tabs = ['day1', 'day2', 'extra'];
+        let currentTabIndex = 0; // 預設在第一個
+
+        // 2. 修改原本的 switchTab 以便同步更新索引
+        // (請保留您原本的 switchTab 內容，只要在函式最開頭加入這一行即可)
+        const originalSwitchTab = switchTab; // 備份原本的函式
+        switchTab = function(tabName) {
+            currentTabIndex = tabs.indexOf(tabName); // 更新目前位置
+            originalSwitchTab(tabName); // 執行原本的切換動作
+        };
+
+        // 3. 監聽滑動
+        let touchStartX = 0;
+        let touchEndX = 0;
+        const swipeArea = document.getElementById('swipe-area');
+
+        // 手指按下去
+        swipeArea.addEventListener('touchstart', e => {
+            touchStartX = e.changedTouches[0].screenX;
+        }, {passive: true});
+
+        // 手指放開
+        swipeArea.addEventListener('touchend', e => {
+            touchEndX = e.changedTouches[0].screenX;
+            handleSwipe();
+        }, {passive: true});
+
+        // 判斷方向並切換
+        function handleSwipe() {
+            const threshold = 50; // 滑動超過 50px 才算數，避免誤觸
+            const diff = touchStartX - touchEndX;
+
+            if (Math.abs(diff) > threshold) {
+                if (diff > 0) {
+                    // 向左滑 (下一頁)
+                    if (currentTabIndex < tabs.length - 1) {
+                        switchTab(tabs[currentTabIndex + 1]);
+                    }
+                } else {
+                    // 向右滑 (上一頁)
+                    if (currentTabIndex > 0) {
+                        switchTab(tabs[currentTabIndex - 1]);
+                    }
+                }
             }
         }
         
