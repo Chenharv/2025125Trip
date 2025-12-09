@@ -215,22 +215,21 @@
             activeBtn.classList.remove('text-gray-500');
         }
 
-// Weather Functions (中央氣象署 CWA 官方精準版)
+// Weather Functions (中央氣象署 CWA - 防呆除錯版)
         async function fetchWeather() {
             const weatherCard = document.getElementById('weather-card');
+            const hourlyContainer = document.getElementById('hourly-forecast');
             
-            // 👇👇👇 請在這裡填入您的氣象署授權碼 👇👇👇
+            // 👇👇👇 請務必確認這裡已填入正確的授權碼 👇👇👇
             const CWA_KEY = 'CWA-238CE5CA-08E3-4392-8F7D-23AAD6B5814E'; 
-            // 例如: const CWA_KEY = 'CWA-1234-ABCD-5678-EFGH';
+            // 格式範例: 'CWB-12345678-ABCD-1234-EFGH-1234567890AB'
 
-            // 設定 API: 抓取台東縣 (F-D0047-039) 的 "臺東市" 未來 2 天預報
-            // 參數說明: 
-            // ElementName: T=溫度, Wx=天氣現象, PoP12h=12小時降雨機率
+            // 設定 API: 抓取台東縣 (F-D0047-039) 的 "臺東市"
             const url = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-039?Authorization=${CWA_KEY}&locationName=臺東市&elementName=T,Wx,PoP12h,PoP6h`;
 
-            // CWA 天氣現象代碼轉圖示 (Icon Mapping)
+            // CWA 天氣現象代碼轉圖示
             function getCwaIcon(wxString) {
-                // CWA 的 Wx 有時是文字，包含關鍵字即可判斷
+                if (!wxString) return { icon: 'fa-question', color: 'text-gray-300' };
                 if (wxString.includes('雷')) return { icon: 'fa-bolt', color: 'text-purple-500' };
                 if (wxString.includes('雨')) return { icon: 'fa-umbrella', color: 'text-blue-500' };
                 if (wxString.includes('晴') && wxString.includes('雲')) return { icon: 'fa-cloud-sun', color: 'text-orange-400' };
@@ -241,81 +240,71 @@
             }
 
             try {
-                // 如果使用者忘記填 Key，不執行
-                if(CWA_KEY.includes('請將此處')) {
-                    console.warn("尚未填入 CWA API Key");
-                    document.getElementById('weather-desc').innerText = "請設定 API Key";
-                    weatherCard.classList.remove('hidden');
-                    return;
+                // 檢查 Key 是否還沒填
+                if(CWA_KEY.includes('請將此處') || CWA_KEY.length < 10) {
+                    throw new Error("請填入 API Key");
                 }
 
                 const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error("API 連線失敗 (Key 無效?)");
+                }
+                
                 const data = await response.json();
                 
-                // 進入資料結構: records -> locations -> location[0] (臺東市) -> weatherElement
+                // 檢查資料結構是否正確
+                if (!data.records || !data.records.locations) {
+                    throw new Error("查無台東資料");
+                }
+
                 const locationData = data.records.locations[0].location[0];
                 const elements = locationData.weatherElement;
                 
-                // 整理資料方便讀取 (將 Array 轉為 Object Key)
-                // Wx: 天氣現象, T: 溫度, PoP6h: 6小時降雨率
                 const weatherMap = {};
-                elements.forEach(el => {
-                    weatherMap[el.elementName] = el.time;
-                });
+                elements.forEach(el => { weatherMap[el.elementName] = el.time; });
 
-                // --- 1. 處理「目前/最近」的天氣 ---
-                // CWA 的資料是「未來3小時區段」，我們取第一個區段(current)
-                const currentWx = weatherMap['Wx'][0].elementValue[0].value; // 例如: "多雲"
-                const currentT = weatherMap['T'][0].elementValue[0].value;   // 例如: "24"
+                // --- 1. 處理目前天氣 ---
+                const currentWx = weatherMap['Wx'][0].elementValue[0].value; 
+                const currentT = weatherMap['T'][0].elementValue[0].value;
                 
-                // 降雨機率比較特殊，可能是 PoP6h 或 PoP12h，取第一個有效值
-                let currentRain = '--';
-                if(weatherMap['PoP6h'] && weatherMap['PoP6h'][0]) {
+                let currentRain = '0';
+                if(weatherMap['PoP6h'] && weatherMap['PoP6h'][0].elementValue[0].value !== ' ') {
                      currentRain = weatherMap['PoP6h'][0].elementValue[0].value;
-                } else if (weatherMap['PoP12h'] && weatherMap['PoP12h'][0]) {
+                } else if (weatherMap['PoP12h'] && weatherMap['PoP12h'][0].elementValue[0].value !== ' ') {
                      currentRain = weatherMap['PoP12h'][0].elementValue[0].value;
                 }
-                if (currentRain === ' ') currentRain = '0'; // CWA 有時會回傳空白代表0
 
-                // 取得今日高低溫 (遍歷未來24小時找出最大最小值)
+                // 找今日高低溫
                 let maxT = -100, minT = 100;
-                // 檢查前 8 個預報區段 (約24小時)
                 for(let i=0; i<8 && i<weatherMap['T'].length; i++) {
                     const t = parseInt(weatherMap['T'][i].elementValue[0].value);
                     if(t > maxT) maxT = t;
                     if(t < minT) minT = t;
                 }
 
-                // 更新 UI: 目前天氣
+                // 更新 UI
                 const iconInfo = getCwaIcon(currentWx);
                 document.getElementById('current-temp').innerText = currentT;
                 document.getElementById('rain-chance').innerText = currentRain;
                 document.getElementById('weather-icon').innerHTML = `<i class="fas ${iconInfo.icon} ${iconInfo.color}"></i>`;
                 document.getElementById('weather-desc').innerText = `${currentWx} (高${maxT}° 低${minT}°)`;
 
-                // --- 2. 處理「未來時段」預報 (每3小時一階) ---
-                const hourlyContainer = document.getElementById('hourly-forecast');
+                // --- 2. 處理未來預報 ---
                 let html = '';
-                
-                // 顯示未來 3 個區段 (例如現在是 14:00，會顯示 15:00, 18:00, 21:00 的預報)
-                // 從 index=1 開始 (因為 index=0 是目前)
                 for(let i = 1; i <= 3; i++) {
                     if (weatherMap['T'][i]) {
-                        const timeStr = weatherMap['T'][i].startTime; // 格式 "2023-12-09 15:00:00"
-                        const timeDisplay = timeStr.split(' ')[1].substring(0, 5); // 取出 "15:00"
+                        const timeStr = weatherMap['T'][i].startTime; 
+                        const timeDisplay = timeStr.split(' ')[1].substring(0, 5);
                         
                         const valT = weatherMap['T'][i].elementValue[0].value;
                         const valWx = weatherMap['Wx'][i].elementValue[0].value;
                         
-                        // 降雨機率 (每6小時一筆，所以要除以2來對應每3小時的溫度，或是直接找對應時間)
-                        // 這裡簡化邏輯：嘗試找時間重疊的 PoP
                         let valPop = '0';
-                        // 尋找對應時間的 PoP6h
                         if (weatherMap['PoP6h']) {
+                            // 簡單對應：找時間範圍重疊的降雨機率
                             const matchPop = weatherMap['PoP6h'].find(p => p.startTime === timeStr || p.endTime === weatherMap['T'][i].endTime);
-                            if(matchPop) valPop = matchPop.elementValue[0].value;
+                            if(matchPop && matchPop.elementValue[0].value !== ' ') valPop = matchPop.elementValue[0].value;
                         }
-                         if (valPop === ' ' || valPop === null) valPop = '0';
 
                         const subIcon = getCwaIcon(valWx);
 
@@ -329,15 +318,22 @@
                     }
                 }
 
-                // 調整容器 class
                 hourlyContainer.className = "grid grid-cols-3 gap-2 text-center pt-2"; 
                 hourlyContainer.innerHTML = html;
                 
+                // 成功：顯示卡片
                 weatherCard.classList.remove('hidden');
 
             } catch (error) {
-                console.error("CWA Load Error:", error);
-                // 錯誤處理：可以在此處 fallback 回 OpenMeteo，或顯示錯誤訊息
+                console.error("Weather Error:", error);
+                
+                // 失敗：顯示錯誤訊息在卡片上，而不是隱藏卡片
+                document.getElementById('weather-desc').innerText = "暫無資料 (" + error.message + ")";
+                document.getElementById('current-temp').innerText = "--";
+                hourlyContainer.innerHTML = `<div class="col-span-3 text-red-400 text-xs py-2">讀取失敗，請檢查 API Key</div>`;
+                
+                // 強制顯示卡片，讓你知道它還活著
+                weatherCard.classList.remove('hidden');
             }
         }
         
