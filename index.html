@@ -215,17 +215,17 @@
             activeBtn.classList.remove('text-gray-500');
         }
 
-// Weather Functions (中央氣象署 CWA - 修正中文編碼版)
+// Weather Functions (CWA 最終版 - 不在網址過濾中文)
         async function fetchWeather() {
             const weatherCard = document.getElementById('weather-card');
             const hourlyContainer = document.getElementById('hourly-forecast');
             
-            // ✅ 您的正確 API Key (已填入)
+            // ✅ 您的 API Key
             const CWA_KEY = 'CWA-238CE5CA-08E3-4392-8F7D-23AAD6B5814E'; 
 
-            // ⚠️ 修正重點：使用 encodeURIComponent 把 "臺東市" 轉碼，避免 API 讀不懂中文
-            const location = encodeURIComponent('臺東市');
-            const url = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-039?Authorization=${CWA_KEY}&locationName=${location}&elementName=T,Wx,PoP12h,PoP6h`;
+            // ⚠️ 修改重點：移除 url 裡的 &locationName=... 
+            // 直接抓取整個台東縣 (F-D0047-039) 所有鄉鎮，避免編碼錯誤
+            const url = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-039?Authorization=${CWA_KEY}&elementName=T,Wx,PoP12h,PoP6h`;
 
             // 天氣圖示對照
             function getCwaIcon(wxString) {
@@ -241,32 +241,34 @@
 
             try {
                 const response = await fetch(url);
-                
-                // 如果 API 回傳錯誤代碼 (如 400, 403, 404)
-                if (!response.ok) {
-                    throw new Error(`API 連線失敗 (代碼: ${response.status})`);
-                }
+                if (!response.ok) throw new Error(`API 連線失敗 (${response.status})`);
                 
                 const data = await response.json();
                 
-                // 確認資料結構 (F-D0047-039 的結構: records -> locations -> location)
+                // 確認資料結構
                 if (!data.records || !data.records.locations || !data.records.locations[0].location) {
-                    throw new Error("抓不到臺東市資料");
+                    throw new Error("API 回傳格式異常");
                 }
 
-                // 取得「臺東市」的資料 (因為有用 locationName 過濾，所以通常是陣列第 0 筆)
-                const locationData = data.records.locations[0].location[0];
+                // ⚠️ 修改重點：在回傳的資料陣列中，自己尋找「臺東市」
+                // data.records.locations[0].location 是一個陣列，包含台東所有鄉鎮
+                const allTowns = data.records.locations[0].location;
+                const locationData = allTowns.find(town => town.locationName === '臺東市');
+
+                if (!locationData) {
+                    throw new Error("在資料中找不到「臺東市」");
+                }
+
+                // 取得資料成功，開始解析
                 const elements = locationData.weatherElement;
-                
-                // 整理資料 (將 Array 轉為方便讀取的 Object)
                 const weatherMap = {};
                 elements.forEach(el => { weatherMap[el.elementName] = el.time; });
 
-                // --- 1. 處理目前天氣 (取第一筆時段) ---
+                // --- 1. 處理目前天氣 ---
                 const currentWx = weatherMap['Wx'][0].elementValue[0].value; 
                 const currentT = weatherMap['T'][0].elementValue[0].value;
                 
-                // 降雨機率處理 (優先找 6小時，沒有才找 12小時)
+                // 降雨機率邏輯
                 let currentRain = '0';
                 if(weatherMap['PoP6h'] && weatherMap['PoP6h'][0].elementValue[0].value !== ' ') {
                      currentRain = weatherMap['PoP6h'][0].elementValue[0].value;
@@ -274,7 +276,7 @@
                      currentRain = weatherMap['PoP12h'][0].elementValue[0].value;
                 }
 
-                // 計算今日高低溫 (掃描前 24 小時/8個區段)
+                // 高低溫邏輯
                 let maxT = -100, minT = 100;
                 const checkLimit = Math.min(8, weatherMap['T'].length);
                 for(let i=0; i<checkLimit; i++) {
@@ -290,19 +292,16 @@
                 document.getElementById('weather-icon').innerHTML = `<i class="fas ${iconInfo.icon} ${iconInfo.color}"></i>`;
                 document.getElementById('weather-desc').innerText = `${currentWx} (高${maxT}° 低${minT}°)`;
 
-                // --- 2. 處理下方未來預報 (顯示後續 3 個時段) ---
+                // --- 2. 未來預報 ---
                 let html = '';
-                // 從 index 1 開始 (index 0 是現在)
                 for(let i = 1; i <= 3; i++) {
                     if (weatherMap['T'][i]) {
                         const timeStr = weatherMap['T'][i].startTime; 
-                        // 取出時間 (例如 "2023-12-09 15:00:00" -> "15:00")
                         const timeDisplay = timeStr.split(' ')[1].substring(0, 5);
                         
                         const valT = weatherMap['T'][i].elementValue[0].value;
                         const valWx = weatherMap['Wx'][i].elementValue[0].value;
                         
-                        // 找對應時間的降雨機率
                         let valPop = '0';
                         if (weatherMap['PoP6h']) {
                             const matchPop = weatherMap['PoP6h'].find(p => p.startTime === timeStr || p.endTime === weatherMap['T'][i].endTime);
@@ -326,13 +325,10 @@
 
                 hourlyContainer.className = "grid grid-cols-3 gap-2 text-center pt-2"; 
                 hourlyContainer.innerHTML = html;
-                
-                // 成功：顯示卡片
                 weatherCard.classList.remove('hidden');
 
             } catch (error) {
                 console.error("Weather Error:", error);
-                // 顯示詳細錯誤訊息
                 document.getElementById('weather-desc').innerText = "讀取失敗";
                 hourlyContainer.innerHTML = `<div class="col-span-3 text-red-500 text-xs py-2">${error.message}</div>`;
                 weatherCard.classList.remove('hidden');
