@@ -215,7 +215,7 @@
             activeBtn.classList.remove('text-gray-500');
         }
 
-// Weather Functions (CWA 最終完結版 - 修正大小寫問題)
+// Weather Functions (CWA 最終完結版 - 修正所有大小寫陷阱)
         async function fetchWeather() {
             const weatherCard = document.getElementById('weather-card');
             const hourlyContainer = document.getElementById('hourly-forecast');
@@ -241,28 +241,35 @@
                 const response = await fetch(url);
                 const data = await response.json();
 
-                // 🛑 修正重點：同時檢查大寫 Locations 和小寫 locations
+                // 1. 第一層：找 Locations (大小寫都試)
                 const locationsWrapper = data.records.Locations || data.records.locations || data.records.location;
                 
                 if (!locationsWrapper) {
-                    throw new Error(`找不到 locations/Locations 欄位，現有欄位: ${Object.keys(data.records).join(', ')}`);
+                    throw new Error(`第一層找不到 locations，只有: [${Object.keys(data.records).join(', ')}]`);
                 }
 
-                // 取得 location 陣列 (鄉鎮列表)
-                const allTowns = locationsWrapper[0].location;
+                // 取得縣市層級 (通常是陣列第 0 筆)
+                const countyData = locationsWrapper[0];
+
+                // 2. 第二層：找 Location (鄉鎮列表，大小寫都試)
+                // ⚠️ 修正重點在這裡：同時抓 Location 和 location
+                const allTowns = countyData.Location || countyData.location;
                 
                 if (!allTowns) {
-                    throw new Error("找到 Locations 但裡面沒有 location 列表");
+                    // 如果還是找不到，把這一層所有的鑰匙印出來，看看到底叫什麼名字
+                    const keys = Object.keys(countyData).join(', ');
+                    throw new Error(`找到 Locations 但裡面沒有 location 列表。這一層的欄位有: [${keys}]`);
                 }
 
-                // 🔍 搜尋臺東市 (同時找繁體與簡寫)
+                // 3. 第三層：搜尋臺東市
                 const targetTown = allTowns.find(town => 
                     town.locationName === '臺東市' || 
                     town.locationName === '台東市'
                 );
 
                 if (!targetTown) {
-                    throw new Error("找不到臺東市，前幾個是: " + allTowns.slice(0,3).map(t=>t.locationName).join(','));
+                    const townSample = allTowns.slice(0,3).map(t=>t.locationName).join(',');
+                    throw new Error(`找不到臺東市，只看到: ${townSample}...`);
                 }
 
                 // --- 成功！開始解析資料 ---
@@ -328,7 +335,7 @@
                 document.getElementById('weather-desc').innerText = "讀取失敗";
                 
                 hourlyContainer.innerHTML = `
-                    <div class="col-span-3 text-red-600 text-xs text-left p-2 bg-red-50 rounded">
+                    <div class="col-span-3 text-red-600 text-xs text-left p-2 bg-red-50 rounded" style="word-break: break-all;">
                         <strong>錯誤:</strong> ${error.message}
                     </div>`;
                 weatherCard.classList.remove('hidden');
