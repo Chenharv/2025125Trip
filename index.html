@@ -2,25 +2,45 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>台東 1.5 日舒壓之旅</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f3f4f6; overflow-x: hidden; }
         .timeline-line { position: absolute; left: 24px; top: 0; bottom: 0; width: 2px; background-color: #cbd5e1; z-index: 0; }
         .tab-active { border-bottom: 2px solid #0d9488; color: #0d9488; font-weight: bold; }
         .card-shadow { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
+        
+        /* 🚫 重要：這層是視窗，超出隱藏 */
+        .swipe-viewport {
+            width: 100%;
+            overflow: hidden;
+        }
+
+        /* 🚂 重要：這層是軌道，寬度是 300% (因為有3頁)，用 Flex 橫排 */
+        .swipe-track {
+            display: flex;
+            width: 300%; 
+            will-change: transform; /* 效能優化 */
+        }
+
+        /* 📄 重要：每一頁佔軌道的 1/3 (33.333%) */
+        .swipe-page {
+            width: 33.3333%;
+            flex-shrink: 0; /* 不壓縮 */
+            padding-bottom: 80px; /* 底部留白 */
+        }
     </style>
 </head>
-<body class="pb-20">
+<body class="text-gray-700">
 
-    <header class="bg-teal-600 text-white p-4 sticky top-0 z-50 shadow-md">
+    <header class="bg-teal-600 text-white p-4 sticky top-0 z-50 shadow-md select-none">
         <h1 class="text-xl font-bold text-center"><i class="fas fa-map-marked-alt mr-2"></i>台東 1.5 日舒壓之旅</h1>
         <p class="text-xs text-center text-teal-100 mt-1">2025/12/14 → 15</p>
     </header>
 
-   <div id="weather-card" class="mx-4 mt-2 mb-4 relative z-50 bg-white rounded-xl shadow-lg border-t-4 border-blue-400 p-4 hidden">
+    <div id="weather-card" class="mx-4 mt-2 mb-4 relative z-40 bg-white rounded-xl shadow-lg border-t-4 border-blue-400 p-4 hidden">
         <div class="flex justify-between items-center mb-3">
             <div>
                 <h2 class="text-sm text-gray-500 font-bold tracking-wide">台東即時天氣</h2>
@@ -39,46 +59,50 @@
                 </div>
             </div>
         </div>
-
         <div class="border-t border-gray-100 my-2"></div>
-
         <div id="hourly-forecast" class="grid grid-cols-4 gap-2 text-center pt-1">
             <div class="text-xs text-gray-400">載入中</div>
         </div>
     </div>
     
-    <div class="flex justify-around bg-white p-3 sticky top-16 z-40 shadow-sm border-b">
-        <button onclick="switchTab('day1')" id="btn-day1" class="tab-active w-1/3 pb-2 text-center">Day 1</button>
-        <button onclick="switchTab('day2')" id="btn-day2" class="w-1/3 pb-2 text-center text-gray-500">Day 2</button>
-        <button onclick="switchTab('extra')" id="btn-extra" class="w-1/3 pb-2 text-center text-gray-500">順遊景點</button>
+    <div class="flex justify-around bg-white p-3 sticky top-16 z-40 shadow-sm border-b select-none">
+        <button onclick="goToTab(0)" id="btn-0" class="tab-active w-1/3 pb-2 text-center transition-colors">Day 1</button>
+        <button onclick="goToTab(1)" id="btn-1" class="w-1/3 pb-2 text-center text-gray-500 transition-colors">Day 2</button>
+        <button onclick="goToTab(2)" id="btn-2" class="w-1/3 pb-2 text-center text-gray-500 transition-colors">順遊景點</button>
     </div>
 
-    <div id="swipe-area" class="max-w-md mx-auto p-4 relative min-h-screen">
-        
-        <div id="day1" class="tab-content">
-            <div class="relative pl-4">
-                <div class="timeline-line"></div>
-                
-                <div id="day1-list"></div>
-
+    <div class="swipe-viewport" id="viewport">
+        <div class="swipe-track" id="track">
+            
+            <div class="swipe-page">
+                <div class="max-w-md mx-auto p-4 relative">
+                    <div class="relative pl-4">
+                        <div class="timeline-line"></div>
+                        <div id="day1-list"></div>
+                    </div>
+                </div>
             </div>
-        </div>
 
-        <div id="day2" class="tab-content hidden">
-            <div class="relative pl-4">
-                <div class="timeline-line"></div>
-                <div id="day2-list"></div>
+            <div class="swipe-page">
+                <div class="max-w-md mx-auto p-4 relative">
+                    <div class="relative pl-4">
+                        <div class="timeline-line"></div>
+                        <div id="day2-list"></div>
+                    </div>
+                </div>
             </div>
-        </div>
 
-        <div id="extra" class="tab-content hidden">
-            <div id="extra-list" class="space-y-4"></div>
-        </div>
+            <div class="swipe-page">
+                <div class="max-w-md mx-auto p-4 relative">
+                    <div id="extra-list" class="space-y-4"></div>
+                </div>
+            </div>
 
+        </div>
     </div>
 
     <script>
-        // Data Structure
+        // Data Structure (不變)
         const day1Data = [
             { time: "08:47", title: "松山車站 自強472次", type: "begin", duration: "3小時43分", icon: "fa-train", note: "車上享用午餐*台鐵排骨便當*" },
             { time: "13:06", title: "抵達台東車站", type: "carrent", duration: "9分", icon: "fa-suitcase", note: "前往和運租車" },
@@ -133,11 +157,120 @@
             ]}
         ];
 
-        // Render Functions
+        // 🟢 絲滑滑動邏輯 (Touch Logic)
+        let currentIndex = 0;
+        const totalSlides = 3;
+        const track = document.getElementById('track');
+        let startX = 0;
+        let startY = 0;
+        let currentX = 0;
+        let isDragging = false;
+        let isScrolling = false; // 用來判斷是否為垂直捲動
+
+        // 1. 更新按鈕樣式
+        function updateTabs(index) {
+            for(let i=0; i<totalSlides; i++) {
+                const btn = document.getElementById(`btn-${i}`);
+                if(i === index) {
+                    btn.classList.add('tab-active', 'text-teal-700');
+                    btn.classList.remove('text-gray-500');
+                } else {
+                    btn.classList.remove('tab-active', 'text-teal-700');
+                    btn.classList.add('text-gray-500');
+                }
+            }
+        }
+
+        // 2. 切換到指定頁籤 (點擊按鈕或滑動結束時調用)
+        function goToTab(index) {
+            if (index < 0) index = 0;
+            if (index >= totalSlides) index = totalSlides - 1;
+            
+            currentIndex = index;
+            updateTabs(currentIndex);
+            
+            // 開啟過渡動畫
+            track.style.transition = 'transform 0.3s ease-out';
+            // 移動軌道 (例如 index 1 就是往左移 33.33%)
+            track.style.transform = `translateX(-${currentIndex * (100/3)}%)`;
+            
+            // 捲動回頂部 (優化體驗)
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // 3. 觸控事件監聽
+        const viewport = document.getElementById('viewport');
+
+        viewport.addEventListener('touchstart', (e) => {
+            startX = e.touches[0].clientX;
+            startY = e.touches[0].clientY;
+            isDragging = true;
+            isScrolling = undefined; // 重置捲動判斷
+            
+            // 🚫 手指按下去時，暫時關閉動畫，這樣才能 1:1 跟手
+            track.style.transition = 'none';
+        }, { passive: true });
+
+        viewport.addEventListener('touchmove', (e) => {
+            if (!isDragging) return;
+            
+            const touchX = e.touches[0].clientX;
+            const touchY = e.touches[0].clientY;
+            const diffX = touchX - startX;
+            const diffY = touchY - startY;
+
+            // 判斷使用者意圖：是想「左右滑分頁」還是「上下捲動畫面」
+            if (typeof isScrolling === 'undefined') {
+                isScrolling = Math.abs(diffY) > Math.abs(diffX);
+            }
+
+            // 如果是上下捲動，就不處理左右滑動
+            if (isScrolling) return;
+
+            // 阻止瀏覽器預設的左右上一頁下一頁手勢 (如果需要)
+            if (e.cancelable) e.preventDefault();
+
+            // 計算拖動距離 (轉換為百分比)
+            // 視窗寬度
+            const width = viewport.offsetWidth; 
+            // 當前基礎偏移 (例如第2頁就是 -33.33%)
+            const currentTranslate = -currentIndex * (100/3);
+            // 手指拖動的百分比 (除以3是因為軌道寬度是300%)
+            const movePercent = (diffX / width) * (100/3);
+            
+            // 即時移動軌道
+            track.style.transform = `translateX(${currentTranslate + movePercent}%)`;
+            
+        }, { passive: false });
+
+        viewport.addEventListener('touchend', (e) => {
+            if (!isDragging || isScrolling) {
+                isDragging = false;
+                return;
+            }
+            isDragging = false;
+
+            const endX = e.changedTouches[0].clientX;
+            const diff = endX - startX;
+            const threshold = 50; // 滑動超過 50px 就切換
+
+            if (Math.abs(diff) > threshold) {
+                if (diff > 0) {
+                    goToTab(currentIndex - 1); // 往右滑 = 上一頁
+                } else {
+                    goToTab(currentIndex + 1); // 往左滑 = 下一頁
+                }
+            } else {
+                // 滑不夠遠，彈回原位
+                goToTab(currentIndex);
+            }
+        });
+
+
+        // Render Logic (不變)
         function renderTimeline(data, elementId) {
             const container = document.getElementById(elementId);
             let html = '';
-            
             data.forEach(item => {
                 const isActivity = item.type === 'activity' || item.type === 'food' || item.type === 'hotel';
                 const bgColor = isActivity ? 'bg-white' : 'bg-gray-50';
@@ -149,19 +282,15 @@
                     <div class="absolute -left-3 top-0 w-8 h-8 rounded-full ${isActivity ? 'bg-teal-500' : 'bg-gray-400'} text-white flex items-center justify-center shadow-md border-2 border-white">
                         <i class="fas ${item.icon} text-xs"></i>
                     </div>
-                    
                     <div class="${bgColor} p-4 rounded-lg card-shadow border-l-4 ${borderColor}">
                         <div class="flex justify-between items-start">
                             <h3 class="font-bold text-gray-800 text-lg">${item.title}</h3>
                             <span class="text-sm font-mono text-teal-700 font-bold">${item.time}</span>
                         </div>
-                        
                         <div class="mt-2 text-sm text-gray-600 flex items-center">
                             ${item.duration ? `<span class="bg-gray-200 px-2 py-0.5 rounded text-xs mr-2"><i class="far fa-clock mr-1"></i>${item.duration}</span>` : ''}
                         </div>
-                        
                         <p class="mt-2 text-gray-500 text-sm leading-relaxed">${item.note}</p>
-                        
                         ${item.type !== 'end' && item.type !== 'begin' && item.type !== 'carrent' ? `
                         <a href="${googleMapUrl}" target="_blank" class="mt-3 inline-block w-full text-center py-2 rounded border border-teal-500 text-teal-600 text-sm hover:bg-teal-50 transition">
                             <i class="fas fa-location-arrow mr-1"></i> 導航
@@ -175,7 +304,6 @@
         function renderExtras() {
             const container = document.getElementById('extra-list');
             let html = '';
-            
             extraData.forEach(group => {
                 html += `
                 <div class="bg-white rounded-lg p-4 card-shadow mb-4">
@@ -197,43 +325,16 @@
             container.innerHTML = html;
         }
 
-        // Tab Switching Logic
-        function switchTab(tabName) {
-            // Hide all contents
-            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
-            // Show selected content
-            document.getElementById(tabName).classList.remove('hidden');
-            
-            // Reset buttons
-            document.querySelectorAll('button[id^="btn-"]').forEach(btn => {
-                btn.classList.remove('tab-active', 'text-teal-700');
-                btn.classList.add('text-gray-500');
-            });
-            // Highlight active button
-            const activeBtn = document.getElementById(`btn-${tabName}`);
-            activeBtn.classList.add('tab-active', 'text-teal-700');
-            activeBtn.classList.remove('text-gray-500');
-        }
-
-// Weather Functions (終極混合版：O-A0001-001 即時 + F-C0032-001 預報)
+        // Weather Logic (不變)
         async function fetchWeather() {
             const weatherCard = document.getElementById('weather-card');
             const hourlyContainer = document.getElementById('hourly-forecast');
-            
-            // ✅ 您的 API Key
             const CWA_KEY = 'CWA-238CE5CA-08E3-4392-8F7D-23AAD6B5814E'; 
-            
-            // 1. 定義兩個 API URL
-            // (A) 即時觀測 (O-A0001-001) - 抓全台資料回來濾 (因為無法直接用 API 參數濾鄉鎮)
             const realtimeUrl = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization=${CWA_KEY}&elementName=AirTemperature,Weather`;
-            
-            // (B) 未來預報 (F-C0032-001) - 抓臺東縣
             const forecastUrl = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-C0032-001?Authorization=${CWA_KEY}&locationName=臺東縣`;
 
-            // 天氣圖示對照
             function getIcon(wxStr) {
                 if (!wxStr) return { icon: 'fa-cloud', color: 'text-gray-400' };
-                // 即時資料有時回傳 "陰" 或 "多雲"，預報回傳 "多雲時陰"
                 if (wxStr.includes('雷')) return { icon: 'fa-bolt', color: 'text-purple-500' };
                 if (wxStr.includes('雨')) return { icon: 'fa-umbrella', color: 'text-blue-500' };
                 if (wxStr.includes('晴') && wxStr.includes('雲')) return { icon: 'fa-cloud-sun', color: 'text-orange-400' };
@@ -242,84 +343,53 @@
                 if (wxStr.includes('雲')) return { icon: 'fa-cloud', color: 'text-gray-400' };
                 return { icon: 'fa-cloud', color: 'text-gray-400' };
             }
-
-            // 萬用取值 helper
             function getProp(obj, key) {
                 if (!obj) return undefined;
                 return obj[key] || obj[key.charAt(0).toUpperCase() + key.slice(1)] || obj[key.toLowerCase()];
             }
 
             try {
-                // 平行請求兩個 API (加快速度)
                 const [resRealtime, resForecast] = await Promise.all([
-                    fetch(realtimeUrl),
-                    fetch(forecastUrl)
+                    fetch(realtimeUrl), fetch(forecastUrl)
                 ]);
 
                 const dataRealtime = await resRealtime.json();
                 const dataForecast = await resForecast.json();
-
-                // --- 處理 (A) 即時資料 (O-A0001-001) ---
-                // 1. 找到「臺東市」的測站
-                const stations = getProp(dataRealtime.records, 'Station');
-                let targetStation = stations.find(s => s.GeoInfo.TownName === '臺東市');
                 
-                // 如果找不到臺東市(極少見)，就找臺東縣任一個
-                if (!targetStation) targetStation = stations.find(s => s.GeoInfo.CountyName === '臺東縣');
-                if (!targetStation) throw new Error("找不到即時測站資料");
-
-                // 2. 讀取即時溫度 & 天氣
+                const stations = getProp(dataRealtime.records, 'Station');
+                let targetStation = stations.find(s => s.GeoInfo.TownName === '臺東市') || stations.find(s => s.GeoInfo.CountyName === '臺東縣');
+                if (!targetStation) throw new Error("無即時測站");
                 const curTemp = targetStation.WeatherElement.AirTemperature;
-                // 有些自動站沒有 Weather (天氣現象) 欄位，如果沒有就用預報的代替
                 let curWx = targetStation.WeatherElement.Weather; 
-                if (curWx === '-99' || !curWx) curWx = null; // -99 代表儀器故障或無資料
+                if (curWx === '-99' || !curWx) curWx = null;
 
-                // --- 處理 (B) 預報資料 (F-C0032-001) ---
                 const locationAry = getProp(dataForecast.records, 'location');
-                const targetLoc = locationAry[0]; // 臺東縣
+                const targetLoc = locationAry[0];
                 const elements = getProp(targetLoc, 'weatherElement');
                 const weatherMap = {};
-                elements.forEach(el => {
-                    weatherMap[getProp(el, 'elementName')] = getProp(el, 'time');
-                });
-                
+                elements.forEach(el => weatherMap[getProp(el, 'elementName')] = getProp(el, 'time'));
                 const getForecastVal = (name, index) => getProp(getProp(weatherMap[name][index], 'parameter'), 'parameterName');
 
-                // 取得預報的第一個時段 (作為雨率和高低溫的參考)
                 const fWx = getForecastVal('Wx', 0);
                 const fPoP = getForecastVal('PoP', 0);
-                const fMinT = getForecastVal('MinT', 0);
-                const fMaxT = getForecastVal('MaxT', 0);
                 const fCI = getForecastVal('CI', 0);
 
-                // --- 整合顯示 (UI) ---
-                
-                // 決定大卡片顯示什麼
-                // 溫度：絕對使用即時的 (AirTemperature)
                 const displayTemp = curTemp; 
-                
-                // 天氣現象：如果有即時的就用即時，沒有就用預報
                 const displayWx = curWx ? curWx : fWx; 
-                
-                // 降雨機率：即時站只有累積雨量(mm)沒有機率(%)，所以這裡我們用「預報值」
                 const displayPoP = fPoP;
-
                 const iconInfo = getIcon(displayWx);
                 
-                document.getElementById('current-temp').innerText = Math.round(displayTemp); // 四雪五入取整數
+                document.getElementById('current-temp').innerText = Math.round(displayTemp);
                 document.getElementById('rain-chance').innerText = displayPoP;
                 document.getElementById('weather-icon').innerHTML = `<i class="fas ${iconInfo.icon} ${iconInfo.color}"></i>`;
-                // 描述：天氣現象 (體感舒適度)
                 document.getElementById('weather-desc').innerText = `${displayWx} (${fCI})`;
 
-                // --- 產生下方 3 格預報 (來自 F-C0032-001) ---
                 let html = '';
                 for (let i = 0; i < 3; i++) {
                     const timeObj = weatherMap['Wx'][i];
                     const startTime = getProp(timeObj, 'startTime');
                     const datePart = startTime.substring(5, 10).replace('-', '/');
                     const hourPart = startTime.substring(11, 16);
-                    
                     let timeLabel = `${datePart} ${hourPart}`;
                     if (hourPart === '06:00') timeLabel = `${datePart} 白天`;
                     else if (hourPart === '18:00') timeLabel = `${datePart} 晚上`;
@@ -340,7 +410,6 @@
                         <div class="text-[10px] text-blue-500 mt-1 flex items-center">
                             <i class="fas fa-tint text-[8px] mr-1"></i>${valPoP}%
                         </div>
-                        <span class="text-[10px] text-gray-400 mt-1">${valWx}</span>
                     </div>`;
                 }
 
@@ -356,56 +425,6 @@
             }
         }
 
-// --- 🆕 手勢滑動邏輯 (Swipe Logic) ---
-        
-        // 1. 定義分頁順序
-        const tabs = ['day1', 'day2', 'extra'];
-        let currentTabIndex = 0; // 預設在第一個
-
-        // 2. 修改原本的 switchTab 以便同步更新索引
-        // (請保留您原本的 switchTab 內容，只要在函式最開頭加入這一行即可)
-        const originalSwitchTab = switchTab; // 備份原本的函式
-        switchTab = function(tabName) {
-            currentTabIndex = tabs.indexOf(tabName); // 更新目前位置
-            originalSwitchTab(tabName); // 執行原本的切換動作
-        };
-
-        // 3. 監聽滑動
-        let touchStartX = 0;
-        let touchEndX = 0;
-        const swipeArea = document.getElementById('swipe-area');
-
-        // 手指按下去
-        swipeArea.addEventListener('touchstart', e => {
-            touchStartX = e.changedTouches[0].screenX;
-        }, {passive: true});
-
-        // 手指放開
-        swipeArea.addEventListener('touchend', e => {
-            touchEndX = e.changedTouches[0].screenX;
-            handleSwipe();
-        }, {passive: true});
-
-        // 判斷方向並切換
-        function handleSwipe() {
-            const threshold = 50; // 滑動超過 50px 才算數，避免誤觸
-            const diff = touchStartX - touchEndX;
-
-            if (Math.abs(diff) > threshold) {
-                if (diff > 0) {
-                    // 向左滑 (下一頁)
-                    if (currentTabIndex < tabs.length - 1) {
-                        switchTab(tabs[currentTabIndex + 1]);
-                    }
-                } else {
-                    // 向右滑 (上一頁)
-                    if (currentTabIndex > 0) {
-                        switchTab(tabs[currentTabIndex - 1]);
-                    }
-                }
-            }
-        }
-        
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
             renderTimeline(day1Data, 'day1-list');
