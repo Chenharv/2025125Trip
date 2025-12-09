@@ -215,11 +215,11 @@
             activeBtn.classList.remove('text-gray-500');
         }
 
-// Weather Functions (Open-Meteo 無 Proxy 穩定版)
+// Weather Functions (修正版：降雨機率 0% 時強制不顯示雨傘)
         async function fetchWeather() {
             const weatherCard = document.getElementById('weather-card');
             
-            // 設定: 台東市座標 (Open-Meteo 支援 CORS，不需 Proxy，不需金鑰)
+            // 設定: 台東市座標
             const lat = 22.7583;
             const lon = 121.1444;
             const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,weather_code&hourly=temperature_2m,weather_code,precipitation_probability&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FTaipei`;
@@ -232,7 +232,7 @@
                 if (code >= 51 && code <= 67) return { icon: 'fa-cloud-rain', color: 'text-blue-400', desc: '雨' };
                 if (code >= 80) return { icon: 'fa-cloud-showers-heavy', color: 'text-blue-600', desc: '陣雨' };
                 if (code >= 95) return { icon: 'fa-bolt', color: 'text-purple-500', desc: '雷雨' };
-                return { icon: 'fa-cloud', color: 'text-gray-400', desc: '多雲' }; // 預設
+                return { icon: 'fa-cloud', color: 'text-gray-400', desc: '多雲' }; 
             }
 
             try {
@@ -241,45 +241,50 @@
 
                 // 1. 解析目前天氣
                 const current = data.current;
-                const todayDaily = data.daily; // 今天的整日預報
-                const currentInfo = getWeatherInfo(current.weather_code);
+                const todayDaily = data.daily;
+                let currentInfo = getWeatherInfo(current.weather_code);
 
                 // 更新 UI 數值
                 document.getElementById('current-temp').innerText = Math.round(current.temperature_2m);
-                // 降雨機率抓「今天整天最大機率」，比較具參考價值
                 document.getElementById('rain-chance').innerText = todayDaily.precipitation_probability_max[0];
                 
                 // 更新圖示與描述
                 document.getElementById('weather-icon').innerHTML = `<i class="fas ${currentInfo.icon} ${currentInfo.color}"></i>`;
-                // 描述顯示：天氣狀態 (高溫 / 低溫)
                 document.getElementById('weather-desc').innerText = 
                     `${currentInfo.desc} (高${Math.round(todayDaily.temperature_2m_max[0])}° 低${Math.round(todayDaily.temperature_2m_min[0])}°)`;
 
-                // 2. 解析未來時段 (下午/晚上)
+                // 2. 解析未來時段
                 const hourlyContainer = document.getElementById('hourly-forecast');
                 const currentHour = new Date().getHours();
                 const hourlyData = data.hourly;
                 let html = '';
                 
-                // 設定要顯示的未來時間點 (例如：+3小時, +6小時, +9小時)
+                // 設定要顯示的未來時間點
                 const offsets = [3, 6, 9]; 
-                
                 let count = 0;
+
                 offsets.forEach(offset => {
                     const targetIndex = currentHour + offset;
-                    // 確保不超過資料長度 (Open-Meteo 給7天資料，通常不會超過)
+                    
                     if (targetIndex < hourlyData.time.length && count < 3) {
-                        const timeStr = hourlyData.time[targetIndex]; // 格式 "2023-12-09T15:00"
+                        const timeStr = hourlyData.time[targetIndex]; 
                         const temp = Math.round(hourlyData.temperature_2m[targetIndex]);
-                        const pop = hourlyData.precipitation_probability[targetIndex];
+                        const pop = hourlyData.precipitation_probability[targetIndex]; // 降雨機率 %
                         const code = hourlyData.weather_code[targetIndex];
-                        const info = getWeatherInfo(code);
                         
-                        // 只取時間部分 "15:00"
+                        let info = getWeatherInfo(code);
+
+                        // --- 🆕 新增防呆邏輯：如果機率是 0%，強制把雨天圖示改成多雲 ---
+                        if (pop === 0 && (code >= 51 || code >= 80)) {
+                            info = { icon: 'fa-cloud', color: 'text-gray-400', desc: '多雲' };
+                        }
+                        // -------------------------------------------------------
+
                         const timeDisplay = timeStr.split('T')[1];
 
                         html += `
-                        <div class="flex flex-col items-center justify-center bg-blue-50 rounded p-2 col-span-1"> <span class="text-xs text-gray-500 mb-1 font-bold">${timeDisplay}</span>
+                        <div class="flex flex-col items-center justify-center bg-blue-50 rounded p-2 col-span-1">
+                            <span class="text-xs text-gray-500 mb-1 font-bold">${timeDisplay}</span>
                             <i class="fas ${info.icon} ${info.color} text-lg mb-1"></i>
                             <span class="text-sm font-bold text-gray-700">${temp}°</span>
                             <span class="text-[10px] text-blue-500"><i class="fas fa-tint text-[8px]"></i> ${pop}%</span>
@@ -288,17 +293,12 @@
                     }
                 });
 
-                // 因為網格是 grid-cols-4，我們讓它顯示 3-4 個時段比較好看
-                // 這裡稍微調整 CSS class 讓它置中
                 hourlyContainer.className = "grid grid-cols-3 gap-2 text-center pt-2"; 
                 hourlyContainer.innerHTML = html;
-
-                // 顯示卡片
                 weatherCard.classList.remove('hidden');
 
             } catch (error) {
                 console.error("Weather load failed", error);
-                // 失敗時保持隱藏
             }
         }
         
