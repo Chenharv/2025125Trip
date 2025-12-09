@@ -19,7 +19,7 @@
 </head>
 <body class="text-gray-700">
 
-    <header class="bg-teal-600 text-white p-4 sticky top-0 z-50 shadow-md select-none">
+    <header id="main-header" class="bg-teal-600 text-white p-4 sticky top-0 z-50 shadow-md select-none transition-all duration-300">
         <h1 class="text-xl font-bold text-center"><i class="fas fa-map-marked-alt mr-2"></i>台東 1.5 日舒壓之旅</h1>
         <p class="text-xs text-center text-teal-100 mt-1">2025/12/14 → 15</p>
     </header>
@@ -49,10 +49,10 @@
         </div>
     </div>
     
-    <div class="flex justify-around bg-white p-3 sticky top-16 z-40 shadow-sm border-b select-none">
-        <button onclick="goToTab(0)" id="btn-0" class="tab-active w-1/3 pb-2 text-center transition-colors">Day 1</button>
-        <button onclick="goToTab(1)" id="btn-1" class="w-1/3 pb-2 text-center text-gray-500 transition-colors">Day 2</button>
-        <button onclick="goToTab(2)" id="btn-2" class="w-1/3 pb-2 text-center text-gray-500 transition-colors">順遊景點</button>
+    <div id="tab-bar" class="flex justify-around bg-white p-3 sticky top-16 z-40 shadow-sm border-b select-none">
+        <button onclick="goToTab(0, true)" id="btn-0" class="tab-active w-1/3 pb-2 text-center transition-colors">Day 1</button>
+        <button onclick="goToTab(1, true)" id="btn-1" class="w-1/3 pb-2 text-center text-gray-500 transition-colors">Day 2</button>
+        <button onclick="goToTab(2, true)" id="btn-2" class="w-1/3 pb-2 text-center text-gray-500 transition-colors">順遊景點</button>
     </div>
 
     <div class="swipe-viewport" id="viewport">
@@ -82,7 +82,7 @@
     </div>
 
     <script>
-        // Data Structure
+        // Data Structure (不變)
         const day1Data = [
             { time: "08:47", title: "松山車站 自強472次", type: "begin", duration: "3小時43分", icon: "fa-train", note: "車上享用午餐*台鐵排骨便當*" },
             { time: "13:06", title: "抵達台東車站", type: "carrent", duration: "9分", icon: "fa-suitcase", note: "前往和運租車" },
@@ -159,7 +159,10 @@
             }
         }
 
-        function goToTab(index) {
+        // 🌟 核心修改：加入 shouldScroll 參數
+        // shouldScroll = true (點擊按鈕或成功切換頁面時): 捲動到天氣卡片下方
+        // shouldScroll = false (手指誤觸或回彈時): 保持原地不動
+        function goToTab(index, shouldScroll = false) {
             if (index < 0) index = 0;
             if (index >= totalSlides) index = totalSlides - 1;
             
@@ -168,7 +171,22 @@
             
             track.style.transition = 'transform 0.3s ease-out';
             track.style.transform = `translateX(-${currentIndex * (100/3)}%)`;
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+            
+            if (shouldScroll) {
+                // 計算捲動位置：Tab 列的位置 - Header 的高度
+                // 這樣會剛好把天氣卡片捲上去，Header 和 Tab 吸在一起
+                const tabBar = document.getElementById('tab-bar');
+                const header = document.getElementById('main-header');
+                
+                // offsetTop 取得 TabBar 在整份文件中的位置
+                // offsetHeight 取得 Header 的高度
+                const targetPosition = tabBar.offsetTop - header.offsetHeight;
+
+                window.scrollTo({
+                    top: targetPosition,
+                    behavior: 'smooth'
+                });
+            }
         }
 
         const viewport = document.getElementById('viewport');
@@ -186,7 +204,7 @@
             
             const touchX = e.touches[0].clientX;
             const touchY = e.touches[0].clientY;
-            let diffX = touchX - startX; // 用 let 因為我們要修改它
+            let diffX = touchX - startX;
             const diffY = touchY - startY;
 
             if (typeof isScrolling === 'undefined') {
@@ -195,15 +213,9 @@
 
             if (isScrolling) return;
 
-            // ⛔️ 邊界阻擋邏輯 (Boundary Blocking)
-            // 1. 如果在第一頁 (index 0) 且向右滑 (diffX > 0) -> 不准動 (diffX = 0)
-            if (currentIndex === 0 && diffX > 0) {
-                diffX = 0; 
-            }
-            // 2. 如果在最後一頁 (index 2) 且向左滑 (diffX < 0) -> 不准動 (diffX = 0)
-            if (currentIndex === totalSlides - 1 && diffX < 0) {
-                diffX = 0;
-            }
+            // ⛔️ 邊界阻擋
+            if (currentIndex === 0 && diffX > 0) diffX = 0; 
+            if (currentIndex === totalSlides - 1 && diffX < 0) diffX = 0;
 
             if (e.cancelable) e.preventDefault();
 
@@ -226,18 +238,21 @@
             const diff = endX - startX;
             const threshold = 50; 
 
-            // 這裡也加一個小檢查，雖然 touchmove 已經擋了，但以防萬一
-            if (currentIndex === 0 && diff > 0) { goToTab(0); return; }
-            if (currentIndex === totalSlides - 1 && diff < 0) { goToTab(totalSlides - 1); return; }
+            // 邊界防呆
+            if (currentIndex === 0 && diff > 0) { goToTab(0, false); return; }
+            if (currentIndex === totalSlides - 1 && diff < 0) { goToTab(totalSlides - 1, false); return; }
 
             if (Math.abs(diff) > threshold) {
                 if (diff > 0) {
-                    goToTab(currentIndex - 1);
+                    // 成功往右滑 (切換上一頁) -> 執行捲動 (true)
+                    goToTab(currentIndex - 1, true);
                 } else {
-                    goToTab(currentIndex + 1);
+                    // 成功往左滑 (切換下一頁) -> 執行捲動 (true)
+                    goToTab(currentIndex + 1, true);
                 }
             } else {
-                goToTab(currentIndex);
+                // 滑不夠遠 (回彈) -> 不捲動 (false)
+                goToTab(currentIndex, false);
             }
         });
 
