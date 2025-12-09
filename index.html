@@ -20,8 +20,8 @@
         <p class="text-xs text-center text-teal-100 mt-1">2025/12/14 → 15</p>
     </header>
 
-    <div id="weather-card" class="mx-4 mt-1 mb-4 relative z-50 bg-white rounded-xl shadow-lg border-t-4 border-blue-400 p-4 hidden">
-        <div class="flex justify-between items-center">
+   <div id="weather-card" class="mx-4 mt-2 mb-4 relative z-50 bg-white rounded-xl shadow-lg border-t-4 border-blue-400 p-4 hidden">
+        <div class="flex justify-between items-center mb-3">
             <div>
                 <h2 class="text-sm text-gray-500 font-bold tracking-wide">台東即時天氣</h2>
                 <div class="flex items-end mt-1">
@@ -39,7 +39,13 @@
                 </div>
             </div>
         </div>
-    </div>  
+
+        <div class="border-t border-gray-100 my-2"></div>
+
+        <div id="hourly-forecast" class="grid grid-cols-4 gap-2 text-center pt-1">
+            <div class="text-xs text-gray-400">載入中</div>
+        </div>
+    </div>
     
     <div class="flex justify-around bg-white p-3 sticky top-16 z-40 shadow-sm border-b">
         <button onclick="switchTab('day1')" id="btn-day1" class="tab-active w-1/3 pb-2 text-center">Day 1</button>
@@ -209,58 +215,109 @@
             activeBtn.classList.remove('text-gray-500');
         }
 
-        // Weather Functions
+// Weather Functions (更新版：含時段預報)
         async function fetchWeather() {
             const weatherCard = document.getElementById('weather-card');
             
-            // 台東市座標 (Taitung City Coordinates)
+            // 1. 設定 API (新增 hourly 參數，並抓取 2 天份以處理跨夜)
             const lat = 22.7583;
             const lon = 121.1444;
-            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&daily=precipitation_probability_max,temperature_2m_max,temperature_2m_min&timezone=Asia%2FTaipei`;
+            const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&daily=precipitation_probability_max,temperature_2m_max,temperature_2m_min&hourly=temperature_2m,weathercode,precipitation_probability&forecast_days=2&timezone=Asia%2FTaipei`;
+
+            // 輔助函式：取得天氣圖示與描述
+            function getWeatherInfo(code) {
+                if (code === 0) return { icon: 'fa-sun', color: 'text-yellow-400', desc: '晴' };
+                if (code >= 1 && code <= 3) return { icon: 'fa-cloud-sun', color: 'text-orange-300', desc: '多雲' };
+                if (code >= 45 && code <= 48) return { icon: 'fa-smog', color: 'text-gray-400', desc: '霧' };
+                if (code >= 51 && code <= 67) return { icon: 'fa-cloud-rain', color: 'text-blue-400', desc: '雨' };
+                if (code >= 80) return { icon: 'fa-cloud-showers-heavy', color: 'text-blue-600', desc: '陣雨' };
+                if (code >= 95) return { icon: 'fa-bolt', color: 'text-purple-500', desc: '雷雨' };
+                return { icon: 'fa-cloud', color: 'text-gray-400', desc: '陰' };
+            }
 
             try {
                 const response = await fetch(url);
                 const data = await response.json();
 
-                // 解析數據
+                // --- 更新上半部：目前天氣 ---
                 const current = data.current_weather;
                 const daily = data.daily;
-                
-                // 更新 UI
+                const currentInfo = getWeatherInfo(current.weathercode);
+
                 document.getElementById('current-temp').innerText = Math.round(current.temperature);
                 document.getElementById('rain-chance').innerText = daily.precipitation_probability_max[0];
+                document.getElementById('weather-icon').innerHTML = `<i class="fas ${currentInfo.icon} ${currentInfo.color}"></i>`;
+                document.getElementById('weather-desc').innerText = `${currentInfo.desc} (高${Math.round(daily.temperature_2m_max[0])}° 低${Math.round(daily.temperature_2m_min[0])}°)`;
+
+                // --- 更新下半部：時段預報 ---
+                const hourlyContainer = document.getElementById('hourly-forecast');
+                hourlyContainer.innerHTML = ''; // 清空
+
+                // 取得目前小時的 index (Open-Meteo 回傳的時間是 ISO 格式)
+                const currentHour = new Date().getHours();
+                const hourlyData = data.hourly;
                 
-                // 設定天氣圖示與描述
-                const code = current.weathercode;
-                let iconClass = 'fa-cloud';
-                let colorClass = 'text-gray-400';
-                let descText = '多雲';
+                // 我們要找目前時間之後的 index
+                // 簡單作法：API 回傳通常從 00:00 開始，所以目前的 index 大約就是目前的 24小時制小時數
+                // 但為了保險，我們直接找大於現在時間的第一個點
+                
+                let startIndex = -1;
+                const nowStr = new Date().toISOString().slice(0, 13); // 取到小時 "2023-XX-XXTHH"
+                
+                // 為了簡單對應，直接用小時數推算 (API index 0 = Day1 00:00)
+                // 如果現在是 14:00，我們想看 15:00, 18:00, 21:00...
+                // 這裡做一個簡單的每3小時跳躍顯示
+                
+                let count = 0;
+                let html = '';
 
-                // 簡單的天氣代碼對照 (WMO Weather interpretation codes)
-                if (code === 0) { 
-                    iconClass = 'fa-sun'; colorClass = 'text-yellow-400'; descText = '晴朗';
-                } else if (code >= 1 && code <= 3) {
-                    iconClass = 'fa-cloud-sun'; colorClass = 'text-orange-300'; descText = '多雲時晴';
-                } else if (code >= 45 && code <= 48) {
-                    iconClass = 'fa-smog'; colorClass = 'text-gray-400'; descText = '有霧';
-                } else if (code >= 51 && code <= 67) {
-                    iconClass = 'fa-cloud-rain'; colorClass = 'text-blue-400'; descText = '有雨';
-                } else if (code >= 80) {
-                    iconClass = 'fa-cloud-showers-heavy'; colorClass = 'text-blue-600'; descText = '陣雨';
-                } else if (code >= 95) {
-                    iconClass = 'fa-bolt'; colorClass = 'text-purple-500'; descText = '雷雨';
+                // 從目前時間往後推，顯示未來 4 個時段 (間隔 3 小時)
+                for (let i = currentHour + 1; i < hourlyData.time.length; i++) {
+                    // 只抓取每 3 小時的資料 (例如 9點, 12點, 15點...) 或者直接 i+=3
+                    if (count >= 4) break; // 只顯示 4 個
+                    
+                    if ((i - currentHour) % 3 === 0 || count === 0 && (i - currentHour) < 3) {
+                         // 這裡邏輯簡化：直接抓取 i = currentHour + 3, +6, +9...
+                    } else {
+                        continue; 
+                    }
                 }
+                
+                // 重寫迴圈邏輯：直接指定要抓的時間點位移
+                // 抓取：+3小時, +6小時, +9小時, +12小時
+                const offsets = [3, 6, 9, 12];
+                
+                offsets.forEach(offset => {
+                    const targetIndex = currentHour + offset;
+                    // 確保不超過回傳陣列長度
+                    if (targetIndex < hourlyData.time.length) {
+                        const timeStr = hourlyData.time[targetIndex];
+                        const temp = Math.round(hourlyData.temperature_2m[targetIndex]);
+                        const code = hourlyData.weathercode[targetIndex];
+                        const pop = hourlyData.precipitation_probability[targetIndex]; // 降雨機率
+                        const info = getWeatherInfo(code);
+                        
+                        // 解析時間字串 "2023-12-09T15:00" -> "15:00"
+                        const timeDisplay = timeStr.split('T')[1];
 
-                const iconEl = document.getElementById('weather-icon');
-                iconEl.innerHTML = `<i class="fas ${iconClass} ${colorClass}"></i>`;
-                document.getElementById('weather-desc').innerText = `${descText} (高${Math.round(daily.temperature_2m_max[0])}° 低${Math.round(daily.temperature_2m_min[0])}°)`;
+                        html += `
+                        <div class="flex flex-col items-center">
+                            <span class="text-xs text-gray-500 mb-1">${timeDisplay}</span>
+                            <i class="fas ${info.icon} ${info.color} text-lg mb-1"></i>
+                            <span class="text-sm font-bold text-gray-700">${temp}°</span>
+                            <span class="text-[10px] text-blue-400 mt-1"><i class="fas fa-tint text-[8px]"></i> ${pop}%</span>
+                        </div>
+                        `;
+                    }
+                });
 
+                hourlyContainer.innerHTML = html;
+                
                 // 顯示卡片
                 weatherCard.classList.remove('hidden');
 
             } catch (error) {
                 console.error("Weather load failed", error);
-                // 失敗時保持隱藏或顯示錯誤，這裡選擇保持隱藏不影響版面
             }
         }
         
