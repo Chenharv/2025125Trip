@@ -215,7 +215,7 @@
             activeBtn.classList.remove('text-gray-500');
         }
 
-// Weather Functions (CWA 最終完結版 - 修正所有大小寫陷阱)
+// Weather Functions (CWA 終極版 - 全欄位大小寫通吃)
         async function fetchWeather() {
             const weatherCard = document.getElementById('weather-card');
             const hourlyContainer = document.getElementById('hourly-forecast');
@@ -223,7 +223,6 @@
             // ✅ 您的 API Key
             const CWA_KEY = 'CWA-238CE5CA-08E3-4392-8F7D-23AAD6B5814E'; 
             
-            // 抓取台東縣完整資料
             const url = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-039?Authorization=${CWA_KEY}&elementName=T,Wx,PoP12h,PoP6h`;
 
             function getCwaIcon(wxString) {
@@ -237,62 +236,89 @@
                 return { icon: 'fa-cloud-sun', color: 'text-teal-500' };
             }
 
+            // 輔助函式：安全取得屬性 (不分大小寫)
+            function getProp(obj, keyName) {
+                if (!obj) return undefined;
+                // 直接嘗試常見的大小寫組合
+                return obj[keyName] || 
+                       obj[keyName.charAt(0).toUpperCase() + keyName.slice(1)] || 
+                       obj[keyName.toLowerCase()];
+            }
+
             try {
                 const response = await fetch(url);
                 const data = await response.json();
 
-                // 1. 第一層：找 Locations (大小寫都試)
-                const locationsWrapper = data.records.Locations || data.records.locations || data.records.location;
+                // 1. 找 Locations (大寫或小寫)
+                const locationsWrapper = getProp(data.records, 'locations');
                 
                 if (!locationsWrapper) {
-                    throw new Error(`第一層找不到 locations，只有: [${Object.keys(data.records).join(', ')}]`);
+                    throw new Error(`找不到 locations/Locations，現有: [${Object.keys(data.records).join(', ')}]`);
                 }
 
-                // 取得縣市層級 (通常是陣列第 0 筆)
                 const countyData = locationsWrapper[0];
 
-                // 2. 第二層：找 Location (鄉鎮列表，大小寫都試)
-                // ⚠️ 修正重點在這裡：同時抓 Location 和 location
-                const allTowns = countyData.Location || countyData.location;
+                // 2. 找 Location (大寫或小寫)
+                const allTowns = getProp(countyData, 'location');
                 
                 if (!allTowns) {
-                    // 如果還是找不到，把這一層所有的鑰匙印出來，看看到底叫什麼名字
-                    const keys = Object.keys(countyData).join(', ');
-                    throw new Error(`找到 Locations 但裡面沒有 location 列表。這一層的欄位有: [${keys}]`);
+                    throw new Error(`找不到 location/Location 列表`);
                 }
 
-                // 3. 第三層：搜尋臺東市
-                const targetTown = allTowns.find(town => 
-                    town.locationName === '臺東市' || 
-                    town.locationName === '台東市'
-                );
+                // 3. 找臺東市 (使用 getProp 抓取 LocationName 或 locationName)
+                const targetTown = allTowns.find(town => {
+                    const name = getProp(town, 'locationName');
+                    return name === '臺東市' || name === '台東市';
+                });
 
                 if (!targetTown) {
-                    const townSample = allTowns.slice(0,3).map(t=>t.locationName).join(',');
-                    throw new Error(`找不到臺東市，只看到: ${townSample}...`);
+                    // 如果找不到，印出第一筆資料的所有欄位名稱，讓我們知道它到底叫什麼
+                    const firstTownKeys = allTowns.length > 0 ? Object.keys(allTowns[0]).join(', ') : "空陣列";
+                    throw new Error(`找不到臺東市。第一筆資料的欄位有: [${firstTownKeys}]`);
                 }
 
-                // --- 成功！開始解析資料 ---
-                const elements = targetTown.weatherElement;
+                // --- 成功！開始解析資料 (所有欄位都用 getProp 包起來) ---
+                
+                const elements = getProp(targetTown, 'weatherElement');
                 const weatherMap = {};
-                elements.forEach(el => { weatherMap[el.elementName] = el.time; });
+                elements.forEach(el => { 
+                    // 取得 elementName (或 ElementName)
+                    const name = getProp(el, 'elementName');
+                    // 取得 time (或 Time)
+                    const time = getProp(el, 'time');
+                    weatherMap[name] = time; 
+                });
 
-                const currentWx = weatherMap['Wx'][0].elementValue[0].value; 
-                const currentT = weatherMap['T'][0].elementValue[0].value;
+                // 輔助：讀取數值
+                const getValue = (elArr, index) => {
+                    if (!elArr || !elArr[index]) return '--';
+                    const elVal = getProp(elArr[index], 'elementValue');
+                    if (!elVal || !elVal[0]) return '--';
+                    return getProp(elVal[0], 'value');
+                };
+
+                const currentWx = getValue(weatherMap['Wx'], 0);
+                const currentT = getValue(weatherMap['T'], 0);
                 
                 let currentRain = '0';
                 const popArr = weatherMap['PoP6h'] || weatherMap['PoP12h'];
-                if (popArr && popArr[0].elementValue[0].value !== ' ') {
-                    currentRain = popArr[0].elementValue[0].value;
-                }
+                const rawPop = getValue(popArr, 0);
+                if (rawPop !== '--' && rawPop !== ' ') currentRain = rawPop;
 
                 let maxT = -100, minT = 100;
-                const checkLimit = Math.min(8, weatherMap['T'].length);
+                const tArr = weatherMap['T'];
+                const checkLimit = Math.min(8, tArr ? tArr.length : 0);
+                
                 for(let i=0; i<checkLimit; i++) {
-                    const t = parseInt(weatherMap['T'][i].elementValue[0].value);
-                    if(t > maxT) maxT = t;
-                    if(t < minT) minT = t;
+                    const val = getValue(tArr, i);
+                    if (val !== '--') {
+                        const t = parseInt(val);
+                        if(t > maxT) maxT = t;
+                        if(t < minT) minT = t;
+                    }
                 }
+                
+                if (maxT === -100) { maxT = '-'; minT = '-'; }
 
                 const iconInfo = getCwaIcon(currentWx);
                 document.getElementById('current-temp').innerText = currentT;
@@ -302,19 +328,30 @@
 
                 let html = '';
                 for(let i = 1; i <= 3; i++) {
-                    if (weatherMap['T'][i]) {
-                        const timeStr = weatherMap['T'][i].startTime; 
+                    if (weatherMap['T'] && weatherMap['T'][i]) {
+                        const timeStr = getProp(weatherMap['T'][i], 'startTime'); 
                         const timeDisplay = timeStr.split(' ')[1].substring(0, 5);
-                        const valT = weatherMap['T'][i].elementValue[0].value;
-                        const valWx = weatherMap['Wx'][i].elementValue[0].value;
-                        const subIcon = getCwaIcon(valWx);
+                        
+                        const valT = getValue(weatherMap['T'], i);
+                        const valWx = getValue(weatherMap['Wx'], i);
                         
                         let valPop = '0';
                         const subPopList = weatherMap['PoP6h'] || weatherMap['PoP12h'];
                         if(subPopList) {
-                            const match = subPopList.find(p => p.startTime === timeStr || p.endTime === weatherMap['T'][i].endTime);
-                            if(match && match.elementValue[0].value !== ' ') valPop = match.elementValue[0].value;
+                            // 這裡簡化比對邏輯
+                            const raw = getValue(subPopList, 0); // 暫時取第一筆代表，或是寫更複雜的比對
+                            // 為了精確比對時間:
+                             const endTime = getProp(weatherMap['T'][i], 'endTime');
+                             const match = subPopList.find(p => {
+                                 return getProp(p, 'startTime') === timeStr || getProp(p, 'endTime') === endTime;
+                             });
+                             if (match) {
+                                 const matchVal = getProp(getProp(match, 'elementValue')[0], 'value');
+                                 if (matchVal !== ' ') valPop = matchVal;
+                             }
                         }
+
+                        const subIcon = getCwaIcon(valWx);
 
                         html += `
                         <div class="flex flex-col items-center justify-center bg-blue-50 rounded p-2 col-span-1">
