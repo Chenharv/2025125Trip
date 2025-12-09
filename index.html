@@ -215,7 +215,7 @@
             activeBtn.classList.remove('text-gray-500');
         }
 
-// Weather Functions (橫向捲動時間軸版 - 每3小時一報)
+// Weather Functions (智慧切換版：3小時捲動 / 12小時固定)
         async function fetchWeather() {
             const weatherCard = document.getElementById('weather-card');
             const hourlyContainer = document.getElementById('hourly-forecast');
@@ -223,8 +223,8 @@
             // ✅ 您的 API Key
             const CWA_KEY = 'CWA-238CE5CA-08E3-4392-8F7D-23AAD6B5814E'; 
             
-            // 抓取台東縣完整資料
-            const url = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-039?Authorization=${CWA_KEY}&elementName=平均溫度,天氣現象,12小時降雨機率,最高溫度,最低溫度`;
+            // 請求策略：同時請求 T (3小時) 和 平均溫度 (備用)
+            const url = `https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-039?Authorization=${CWA_KEY}&elementName=T,Wx,PoP12h,PoP6h,平均溫度,天氣現象`;
 
             // 天氣圖示對照
             function getIcon(wxStr) {
@@ -237,48 +237,104 @@
                 return { icon: 'fa-cloud', color: 'text-gray-400' };
             }
 
-            // 萬用取值 helper
+            // 萬用屬性讀取 (大小寫/中文通吃)
             function getProp(obj, key) {
                 if (!obj) return undefined;
-                return obj[key] || obj[key.charAt(0).toUpperCase() + key.slice(1)] || obj[key.toLowerCase()];
+                return obj[key] || 
+                       obj[key.charAt(0).toUpperCase() + key.slice(1)] || 
+                       obj[key.toLowerCase()];
             }
 
             try {
                 const response = await fetch(url);
                 const data = await response.json();
 
+                // 1. 找 Locations
                 const locationsWrapper = getProp(data.records, 'locations');
+                if (!locationsWrapper) throw new Error("資料結構異常");
+
                 const allTowns = getProp(locationsWrapper[0], 'location');
-                
                 const targetTown = allTowns.find(town => {
                     const name = getProp(town, 'locationName');
                     return name === '臺東市' || name === '台東市';
                 });
 
-                if (!targetTown) throw new Error("找不到臺東市資料");
+                if (!targetTown) throw new Error("找不到臺東市");
 
-                // --- 解析資料 ---
+                // --- 2. 智慧資料選取 ---
                 const elements = getProp(targetTown, 'weatherElement');
                 const weatherMap = {};
+                
+                // 把所有抓到的元素整理起來
                 elements.forEach(el => {
                     const name = getProp(el, 'elementName');
                     weatherMap[name] = getProp(el, 'time');
                 });
 
-                const getValue = (chineseName, index, valueKey) => {
-                    if (!weatherMap[chineseName] || !weatherMap[chineseName][index]) return '--';
-                    const timeBlock = weatherMap[chineseName][index];
-                    const elVal = getProp(timeBlock, 'elementValue');
+                // 判斷要用哪個資料源：優先用 T (3小時)，沒有才用 平均溫度 (12小時)
+                let mainKey = 'T'; 
+                let valKey = 'value'; // T 的數值通常放在 value 欄位
+                
+                if (!weatherMap['T']) {
+                    mainKey = '平均溫度';
+                    valKey = 'Temperature'; // 平均溫度的數值放在 Temperature 欄位
+                }
+
+                // 檢查資料是否存在
+                if (!weatherMap[mainKey]) throw new Error("找不到溫度資料");
+
+                // --- 3. 判斷資料密度 (決定 UI 模式) ---
+                const timeArr = weatherMap[mainKey];
+                const startTime1 = new Date(getProp(timeArr[0], 'startTime'));
+                const startTime2 = new Date(getProp(timeArr[1], 'startTime'));
+                const diffHours = (startTime2 - startTime1) / (1000 * 60 * 60);
+
+                // 如果間隔小於等於 3 小時 -> 用捲動模式 (Scroll)
+                // 如果間隔大於 3 小時 (6或12) -> 用網格模式 (Grid)
+                const isHourlyMode = diffHours <= 3;
+
+                // 輔助取值函式
+                const getValue = (elName, index, vKey = 'value') => {
+                    // 嘗試多種可能的名字 (英文/中文)
+                    let targetArr = weatherMap[elName];
+                    if (!targetArr) {
+                        // 嘗試對應中文
+                        if(elName === 'T') targetArr = weatherMap['平均溫度'];
+                        if(elName === 'Wx') targetArr = weatherMap['天氣現象'];
+                        if(elName === 'PoP') targetArr = weatherMap['12小時降雨機率'] || weatherMap['PoP12h'] || weatherMap['PoP6h'];
+                    }
+                    
+                    if (!targetArr || !targetArr[index]) return '--';
+                    
+                    const elVal = getProp(targetArr[index], 'elementValue');
                     if (!elVal || !elVal[0]) return '--';
-                    return getProp(elVal[0], valueKey);
+                    
+                    // 嘗試直接取值，或取特定 Key
+                    let res = getProp(elVal[0], vKey);
+                    // 如果用 value 抓不到，試試看 Temperature/Weather 這種專屬 Key
+                    if (res === undefined && vKey === 'value') {
+                         // 暴力法：取第一個 Key 的值
+                         const keys = Object.keys(elVal[0]);
+                         if(keys.length > 0) res = elVal[0][keys[0]];
+                    }
+                    return res;
                 };
 
                 // --- A. 目前天氣 (大卡片) ---
-                const curTemp = getValue('平均溫度', 0, 'Temperature');
-                const curWx = getValue('天氣現象', 0, 'Weather');
-                const curRain = getValue('12小時降雨機率', 0, 'ProbabilityOfPrecipitation');
-                const maxT = getValue('最高溫度', 0, 'MaxTemperature');
-                const minT = getValue('最低溫度', 0, 'MinTemperature');
+                const curTemp = getValue(mainKey, 0, valKey);
+                const curWx = getValue('Wx', 0, 'Weather'); // Wx 用 Weather 或 value
+                const curRain = getValue('PoP', 0, 'ProbabilityOfPrecipitation');
+                
+                // 為了顯示高低溫，遍歷前幾筆
+                let maxT = -100, minT = 100;
+                for(let i=0; i<4; i++) {
+                    const t = parseInt(getValue(mainKey, i, valKey));
+                    if(!isNaN(t)) {
+                        if(t > maxT) maxT = t;
+                        if(t < minT) minT = t;
+                    }
+                }
+                if(maxT === -100) { maxT='-'; minT='-'; }
 
                 const iconInfo = getIcon(curWx);
                 document.getElementById('current-temp').innerText = curTemp;
@@ -286,47 +342,52 @@
                 document.getElementById('weather-icon').innerHTML = `<i class="fas ${iconInfo.icon} ${iconInfo.color}"></i>`;
                 document.getElementById('weather-desc').innerText = `${curWx} (高${maxT}° 低${minT}°)`;
 
-                // --- B. 未來預報 (橫向捲動列表) ---
+                // --- B. 未來預報列表 ---
                 let html = '';
                 
-                // 設定要顯示多少個時段：顯示未來約 24 小時 (8 個區段 x 3小時)
-                // 先檢查資料夠不夠長
-                const availableLen = weatherMap['平均溫度'] ? weatherMap['平均溫度'].length : 0;
-                const limit = Math.min(9, availableLen); // 顯示 9 個區段 (扣掉 index 0 現在，顯示未來 8 個)
+                // 如果是 3小時模式，顯示 9 個 (約24小時)；如果是 12小時模式，只顯示 3 個
+                const limit = isHourlyMode ? 9 : 3; 
+                // 確保不要超過陣列長度
+                const safeLimit = Math.min(limit, timeArr.length);
 
-                for (let i = 1; i < limit; i++) {
-                    const timeBlock = weatherMap['平均溫度'][i];
-                    const startTime = getProp(timeBlock, 'startTime'); 
-                    
-                    // 時間處理：只顯示 "15:00" 或 "18:00"
-                    // 如果跨日了，可以加個日期標示，這裡簡化只顯示時間
+                for (let i = 1; i < safeLimit; i++) {
+                    const timeBlock = timeArr[i];
+                    const startTime = getProp(timeBlock, 'startTime');
                     const timeObj = new Date(startTime);
                     const timeDisplay = startTime.split('T')[1].substring(0, 5);
-                    const monthDay = `${timeObj.getMonth()+1}/${timeObj.getDate()}`; // 12/9
+                    const monthDay = `${timeObj.getMonth()+1}/${timeObj.getDate()}`;
 
-                    const valTemp = getValue('平均溫度', i, 'Temperature');
-                    const valWx = getValue('天氣現象', i, 'Weather');
+                    const valTemp = getValue(mainKey, i, valKey);
+                    const valWx = getValue('Wx', i, 'Weather'); 
                     
-                    // 降雨機率處理 (12h vs 6h/3h 對應)
+                    // 降雨機率處理 (時間對應)
                     let valRain = '--';
-                    if (weatherMap['12小時降雨機率']) {
-                        const rainBlock = weatherMap['12小時降雨機率'].find(r => 
+                    // 簡易邏輯：拿對應 index 的降雨機率，如果是 Hourly 模式，可能要除以 2 或 4 去對應
+                    // 這裡簡化：嘗試找時間重疊
+                    const popArr = weatherMap['PoP12h'] || weatherMap['12小時降雨機率'] || weatherMap['PoP6h'];
+                    if (popArr) {
+                        const match = popArr.find(r => 
                             getProp(r, 'startTime') === startTime || 
-                            getProp(r, 'endTime') === getProp(timeBlock, 'endTime')
+                            (new Date(getProp(r, 'startTime')) <= timeObj && new Date(getProp(r, 'endTime')) > timeObj)
                         );
-                        if (rainBlock) {
-                            valRain = getProp(getProp(rainBlock, 'elementValue')[0], 'ProbabilityOfPrecipitation');
-                        } else {
-                            // 找不到就往前找一個 (因為降雨資料比較稀疏)
-                             valRain = getValue('12小時降雨機率', Math.floor(i/2), 'ProbabilityOfPrecipitation');
+                        if (match) {
+                            // 降雨機率的值可能在 value 或 ProbabilityOfPrecipitation
+                            const pVal = getProp(match.elementValue[0], 'ProbabilityOfPrecipitation') || getProp(match.elementValue[0], 'value');
+                            if(pVal) valRain = pVal;
                         }
                     }
 
                     const subIcon = getIcon(valWx);
 
-                    // 產生直式的小卡片，寬度固定
+                    // 根據模式調整卡片寬度
+                    // Hourly: 窄卡片 (w-20)
+                    // 12h: 寬卡片 (col-span-1)
+                    const cardClass = isHourlyMode 
+                        ? "flex-shrink-0 flex flex-col items-center justify-center bg-blue-50 rounded-lg p-2 w-20 mx-1 border border-blue-100"
+                        : "flex flex-col items-center justify-center bg-blue-50 rounded-lg p-2 col-span-1 border border-blue-100";
+
                     html += `
-                    <div class="flex-shrink-0 flex flex-col items-center justify-center bg-blue-50 rounded-lg p-2 w-20 mx-1 border border-blue-100">
+                    <div class="${cardClass}">
                         <span class="text-[10px] text-gray-400 leading-tight">${monthDay}</span>
                         <span class="text-xs text-gray-600 font-bold mb-1">${timeDisplay}</span>
                         <i class="fas ${subIcon.icon} ${subIcon.color} text-xl mb-1"></i>
@@ -337,16 +398,21 @@
                     </div>`;
                 }
 
-                // ⚠️ 關鍵修改：改成 Flex 佈局 + 橫向捲動 (overflow-x-auto)
-                hourlyContainer.className = "flex overflow-x-auto pb-2 pt-2 scrollbar-hide"; 
-                // scrollbar-hide 雖然是自定義，但 overflow-x-auto 就能讓手機滑動了
+                // 設定容器樣式
+                if (isHourlyMode) {
+                    // 橫向捲動
+                    hourlyContainer.className = "flex overflow-x-auto pb-2 pt-2 scrollbar-hide"; 
+                } else {
+                    // 3欄網格
+                    hourlyContainer.className = "grid grid-cols-3 gap-2 text-center pt-2";
+                }
                 
                 hourlyContainer.innerHTML = html;
                 weatherCard.classList.remove('hidden');
 
             } catch (error) {
                 console.error("Weather Error:", error);
-                document.getElementById('weather-desc').innerText = "暫無詳細預報";
+                document.getElementById('weather-desc').innerText = "讀取失敗";
                 hourlyContainer.innerHTML = `<div class="p-2 text-red-500 text-xs">${error.message}</div>`;
                 weatherCard.classList.remove('hidden');
             }
